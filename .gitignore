@@ -1,0 +1,14 @@
+# Raw and intermediate data: customer data, never commit
+data/
+raw/
+*.json.gz
+*.csv.gz
+*.xlsx
+*.csv
+!tests/fixtures/*.csv
+
+# Environment
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
