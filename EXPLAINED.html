@@ -1,0 +1,481 @@
+<!doctype html><html><head><meta charset="utf-8"><title>How the Churn Model Was Built</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+:root{color-scheme:light}
+body{background:#fff;color:#1a1a1a;font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;max-width:860px;margin:40px auto;padding:0 20px}
+h1{font-size:28px;border-bottom:2px solid #eee;padding-bottom:8px}
+h2{font-size:20px;margin-top:32px;color:#00594C}
+table{border-collapse:collapse;margin:12px 0;width:100%}
+th,td{border:1px solid #ddd;padding:7px 10px;text-align:left}
+th{background:#f4f6f5}
+tr:nth-child(even) td{background:#fafafa}
+code{background:#f2f2f2;padding:1px 5px;border-radius:4px;font-size:14px}
+li{margin:4px 0}
+pre{background:#f6f8f7;border:1px solid #e3e6e4;padding:12px;border-radius:6px;font-size:14px;overflow-x:auto} pre code{background:none;padding:0} hr{border:0;border-top:1px solid #e3e6e4;margin:36px 0} em{color:#555}</style></head><body><h1>How the churn model was built, step by step</h1>
+<p>This walks through what was done, in order, and why. Part 2 explains gradient descent and
+gradient boosting from scratch.</p>
+<hr />
+<h1>Part 1: The process</h1>
+<h2>Step 1. Gather the data</h2>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>What it is</th>
+<th>Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Anand's HEKA pull</strong> (4 JSON files)</td>
+<td>weekly telemetry snapshots of grids belonging to customers who <strong>churned</strong></td>
+<td>19,033 snapshots · 488 accounts · 573 grids · Oct 2022 – Oct 2026</td>
+</tr>
+<tr>
+<td><strong>Churn list</strong> (FY25–FY26 spreadsheet)</td>
+<td>each churned account's <strong>churn date</strong> ("Customer Until")</td>
+<td>1,108 accounts; all 488 of Anand's are on it</td>
+</tr>
+<tr>
+<td><strong>Weekly HEKA exports</strong> (8 spreadsheets)</td>
+<td>the whole live fleet, 29 Apr – 5 Jul 2026</td>
+<td>4,756 grids</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Problem found:</strong> Anand's data contains <em>only</em> churners. A model can't be judged without
+customers who stayed: a model that flags everyone would look perfect. So the weekly fleet
+exports became the stand-in "retained" group.</p>
+<h2>Step 2. Clean and combine</h2>
+<ul>
+<li>Both sources were converted into <strong>one table</strong>: one row per grid per snapshot date, with the
+  same columns (members, daily DNS queries, database objects, admins, dashboards, opt-in status,
+  and 137 feature-usage counters).</li>
+<li><strong>Duplicates removed:</strong> some grids were collected more than once a day, so only the last
+  collection per day is kept. That left 49,825 snapshots.</li>
+<li><strong>Sanity check:</strong> 148 grids appear in both sources. On the same day, every field matched
+  100%, so the two sources record data identically.</li>
+</ul>
+<h2>Step 3. Decide who gets scored, and when</h2>
+<p>A prediction is only useful <em>before</em> churn happens, so:</p>
+<ul>
+<li><strong>Churners</strong> are scored <strong>3 months before their churn date</strong>, the same lead time the Gainsight
+  model uses.</li>
+<li><strong>Retained grids</strong> are scored at <strong>5 July 2026</strong>, the latest data we have.</li>
+<li><strong>Only data from on or before the scoring date is used.</strong> The model can never see the future.</li>
+<li>A grid is only scored if it had been reporting for the full 2 months before that date, and
+  hadn't been silent for over a year.</li>
+</ul>
+<p>Result: <strong>378 churned grids</strong> (332 accounts) vs <strong>3,612 retained grids</strong>. About <strong>9.5%</strong>
+churners, roughly the real-world mix.</p>
+<h2>Step 4. Rebuild the current Taxonomy model and test it (v0)</h2>
+<p>Each of the four Churn rules was coded exactly as the Taxonomy spreadsheet states:</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th style="text-align: right;">Points</th>
+<th>Fires when (over 2 months)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Traffic falling off</td>
+<td style="text-align: right;">25</td>
+<td>DNS queries or objects down 30%+</td>
+</tr>
+<tr>
+<td>Shrinking deployment</td>
+<td style="text-align: right;">25</td>
+<td>members down 10%+</td>
+</tr>
+<tr>
+<td>Going quiet</td>
+<td style="text-align: right;">8</td>
+<td>object count moves less than 2%</td>
+</tr>
+<tr>
+<td>Gone dark</td>
+<td style="text-align: right;">8</td>
+<td>no report for 14+ days, or opted out</td>
+</tr>
+</tbody>
+</table>
+<p>The score adds the points of every signal that fires, and <strong>35 or more = flagged</strong>.</p>
+<p><strong>Result: 1 of 378 churners flagged.</strong> The model fails because two of its signals almost never
+fire before churn, and the other two fire <em>more</em> on healthy customers.</p>
+<h2>Step 5. Build a much bigger set of clues ("features")</h2>
+<p>Instead of 4 yes/no signals, each grid got <strong>171 measurements</strong> at its scoring date:</p>
+<table>
+<thead>
+<tr>
+<th>Family</th>
+<th>Examples</th>
+<th style="text-align: right;">Count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Silence</strong></td>
+<td>days since last report, opted out</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr>
+<td><strong>Trends</strong></td>
+<td>2-month % change in members, queries, objects, admins, dashboards</td>
+<td style="text-align: right;">6</td>
+</tr>
+<tr>
+<td><strong>Size and setup</strong></td>
+<td>daily queries, objects, admins, dashboards, licences, password policy</td>
+<td style="text-align: right;">about 14</td>
+</tr>
+<tr>
+<td><strong>Feature usage</strong></td>
+<td>DNS Traffic Control %, A records, DHCP leases, zones, …</td>
+<td style="text-align: right;">137</td>
+</tr>
+<tr>
+<td><strong>Taxonomy verdicts</strong></td>
+<td>each of the 4 signals: green / amber / red / n/a, plus the score</td>
+<td style="text-align: right;">14</td>
+</tr>
+</tbody>
+</table>
+<h2>Step 6. Check for "cheating" (data leaks)</h2>
+<p>A model can score well by spotting <em>which file a row came from</em> instead of who churned. This
+happened twice, and both were fixed before any result was trusted:</p>
+<ol>
+<li><strong>Scoring dates lined up with snapshot days.</strong> Every retained grid was scored on the exact day
+   of a snapshot, so its "days since last report" was always 0. The model learned "0 = retained".
+   <strong>Fix:</strong> retained grids were moved to a random 0–6 days after 5 July, like churners.</li>
+<li><strong>Different snapshot frequency.</strong> The fleet files had 7 snapshots per 2 months; Anand's had 9.
+   Anything depending on the <em>number</em> of snapshots identified the file.
+   <strong>Fix:</strong> those measurements were removed.</li>
+</ol>
+<p>Before the fixes the best model scored a too-good-to-be-true <strong>0.98</strong>. After them it scored an
+honest <strong>0.84</strong>. The unit tests also caught a bug that stopped "opted out" from ever firing,
+and that's fixed.</p>
+<h2>Step 7. Train the models, testing on customers they haven't seen</h2>
+<p>Four models were tried, from simple to powerful:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>In plain words</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>v1 Re-weighted Taxonomy</strong></td>
+<td>same 4 signals, but the data picks the points instead of the spreadsheet</td>
+</tr>
+<tr>
+<td><strong>v2 Logistic regression</strong></td>
+<td>one weight per clue, added up and turned into a probability</td>
+</tr>
+<tr>
+<td><strong>v3 Random forest</strong></td>
+<td>500 decision trees, each built on a random sample; they vote</td>
+</tr>
+<tr>
+<td><strong>v4 Gradient boosting</strong></td>
+<td>400 small trees built <em>one after another</em>, each fixing the last one's mistakes (see Part 2)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>How they were tested: 5-fold cross-validation.</strong>
+1. Split the customers into 5 groups. All grids of one account stay in the same group, so the
+   model can't recognise a customer it has already seen.
+2. Train on 4 groups, then predict the 5th group, which the model never saw.
+3. Repeat 5 times so every customer gets predicted exactly once by a model that never saw it.</p>
+<p>The cut-off for "flag" vs "don't flag" was also chosen using only the training groups.</p>
+<h2>Step 8. Measure</h2>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Question it answers</th>
+<th style="text-align: right;">v0 Taxonomy</th>
+<th style="text-align: right;">v4 Gradient boosting</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Recall</strong></td>
+<td>Of the real churners, how many did we catch?</td>
+<td style="text-align: right;">0.3% (1 of 378)</td>
+<td style="text-align: right;"><strong>43%</strong> (163)</td>
+</tr>
+<tr>
+<td><strong>Precision</strong></td>
+<td>Of the customers we flagged, how many really churned?</td>
+<td style="text-align: right;">4%</td>
+<td style="text-align: right;"><strong>42%</strong></td>
+</tr>
+<tr>
+<td><strong>Recall @ top 10%</strong></td>
+<td>If the team reviews only the riskiest 10%, what share of churners do they find?</td>
+<td style="text-align: right;">7%</td>
+<td style="text-align: right;"><strong>43%</strong></td>
+</tr>
+<tr>
+<td><strong>ROC-AUC</strong></td>
+<td>How well does the score rank churners above non-churners? (0.5 = coin flip)</td>
+<td style="text-align: right;">0.52</td>
+<td style="text-align: right;"><strong>0.84</strong></td>
+</tr>
+<tr>
+<td><strong>Accuracy</strong></td>
+<td>What share of all predictions were right?</td>
+<td style="text-align: right;">90%</td>
+<td style="text-align: right;">89%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why accuracy misleads:</strong> about 90% of customers don't churn, so a model that flags <em>nobody</em>
+scores 90%. That's exactly what v0 almost does.</p>
+<h2>Step 9. Explain what the model learned</h2>
+<p><strong>Permutation importance:</strong> take one clue, shuffle its values randomly across customers, and see
+how much the score drops. A big drop means the model relied on it.</p>
+<table>
+<thead>
+<tr>
+<th>Family shuffled</th>
+<th style="text-align: right;">ROC-AUC drop</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Customer profile (size and feature usage)</td>
+<td style="text-align: right;"><strong>0.18</strong></td>
+</tr>
+<tr>
+<td>Silence</td>
+<td style="text-align: right;"><strong>0.08</strong></td>
+</tr>
+<tr>
+<td>Trends</td>
+<td style="text-align: right;">0.02</td>
+</tr>
+<tr>
+<td>Taxonomy verdicts</td>
+<td style="text-align: right;">0.00</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Conclusion:</strong> churners don't visibly wind down. They are <strong>thin deployments</strong> (few queries,
+no DNS Traffic Control, low reporting use) that <strong>go silent</strong> more often.</p>
+<hr />
+<h1>Part 2: Gradient descent and gradient boosting</h1>
+<h2>Gradient descent: walking downhill in fog</h2>
+<p>Imagine you're on a hillside in thick fog and want to reach the lowest point. You can't see the
+valley, but you can feel which way the ground slopes under your feet. So you:
+1. feel the slope;
+2. take a small step <strong>downhill</strong>;
+3. repeat until the ground is flat.</p>
+<p>That is gradient descent:
+- the <strong>hill</strong> is the <em>loss</em>, a number measuring how wrong the model is;
+- your <strong>position</strong> is the model's settings (its <em>weights</em>);
+- the <strong>slope</strong> is the <em>gradient</em>, which says in which direction the error grows;
+- the <strong>step size</strong> is the <em>learning rate</em>.</p>
+<p><strong>Update rule:</strong> new weight = old weight − learning rate × slope.</p>
+<h3>Tiny worked example</h3>
+<p>Say the error is <code>(w − 3)²</code>, which is smallest at w = 3. Its slope is <code>2 × (w − 3)</code>. Start at
+w = 0 with a learning rate of 0.1:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Step</th>
+<th style="text-align: right;">w</th>
+<th style="text-align: right;">Slope 2(w−3)</th>
+<th style="text-align: right;">New w = w − 0.1 × slope</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">−6.0</td>
+<td style="text-align: right;">0.60</td>
+</tr>
+<tr>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.60</td>
+<td style="text-align: right;">−4.8</td>
+<td style="text-align: right;">1.08</td>
+</tr>
+<tr>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">1.08</td>
+<td style="text-align: right;">−3.84</td>
+<td style="text-align: right;">1.46</td>
+</tr>
+<tr>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">…</td>
+<td style="text-align: right;">… approaches <strong>3</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The steps shrink as the slope flattens, which is how it "lands" at the bottom.
+- <strong>Learning rate too big:</strong> you overshoot and bounce around.
+- <strong>Learning rate too small:</strong> it takes forever.</p>
+<h3>For churn, the "hill" is log loss</h3>
+<p>The model outputs a churn probability <em>p</em> for each customer. <strong>Log loss</strong> punishes confident
+wrong answers heavily:
+- a real churner given p = 0.9 costs little;
+- a real churner given p = 0.01 costs a lot.</p>
+<p>Gradient descent (or a smarter cousin of it) adjusts the model to make the total log loss as
+small as possible.</p>
+<h2>Gradient boosting: gradient descent, but each step is a small decision tree</h2>
+<p>A <strong>decision tree</strong> is a flowchart of questions:</p>
+<pre><code>days since last report &gt; 21?
+ ├─ yes → DTC members % = 0?
+ │         ├─ yes → raise risk a lot
+ │         └─ no  → raise risk a little
+ └─ no  → daily queries &lt; 10,000? → …
+</code></pre>
+<p>One small tree is a weak predictor. <strong>Boosting</strong> builds many of them <strong>in sequence</strong>, each one
+correcting the mistakes left over by all the trees before it:</p>
+<ol>
+<li><strong>Start with a guess.</strong> Give every grid the same risk, the average churn rate (about 9.5%).</li>
+<li><strong>Measure the mistakes.</strong> For each grid, mistake = actual − predicted. A churner (1) predicted
+   at 0.095 has a mistake of <strong>+0.905</strong>. A retained grid (0) has a mistake of <strong>−0.095</strong>.
+   <em>Mathematically, this "actual minus predicted" is exactly the downhill slope of the log loss.
+   That's where "gradient" comes from.</em></li>
+<li><strong>Fit a small tree to the mistakes,</strong> not to the original answers. The tree finds questions
+   that separate "under-predicted" grids from "over-predicted" ones.</li>
+<li><strong>Take a small step.</strong> Add that tree's output × the learning rate (0.05) to every grid's score.
+   Small steps stop any single tree from dominating.</li>
+<li><strong>Repeat</strong> 400 times. Each new tree targets what's still wrong.</li>
+</ol>
+<p><strong>Gradient descent vs gradient boosting:</strong>
+- <strong>Gradient descent</strong> moves the model's <em>weights</em> downhill.
+- <strong>Gradient boosting</strong> moves the model's <em>predictions</em> downhill, using a tree as each step.</p>
+<h3>Toy example: three customers</h3>
+<table>
+<thead>
+<tr>
+<th>Grid</th>
+<th style="text-align: center;">Actually churned?</th>
+<th style="text-align: right;">Start</th>
+<th style="text-align: right;">After tree 1</th>
+<th style="text-align: right;">After many trees</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A: silent 30 days, no DTC</td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: right;">0.095</td>
+<td style="text-align: right;">0.13</td>
+<td style="text-align: right;"><strong>0.85</strong></td>
+</tr>
+<tr>
+<td>B: reporting, heavy DTC use</td>
+<td style="text-align: center;">no</td>
+<td style="text-align: right;">0.095</td>
+<td style="text-align: right;">0.09</td>
+<td style="text-align: right;"><strong>0.03</strong></td>
+</tr>
+<tr>
+<td>C: reporting, tiny deployment</td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: right;">0.095</td>
+<td style="text-align: right;">0.10</td>
+<td style="text-align: right;"><strong>0.55</strong></td>
+</tr>
+</tbody>
+</table>
+<p><em>The numbers are illustrative, to show the direction of movement.</em></p>
+<h3>The settings used, and why</h3>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Value</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Number of trees</td>
+<td>400</td>
+<td>how many correction steps</td>
+</tr>
+<tr>
+<td>Learning rate</td>
+<td>0.05</td>
+<td>step size; small means careful, less overfitting</td>
+</tr>
+<tr>
+<td>Max leaves per tree</td>
+<td>15</td>
+<td>keeps each tree small and "weak"</td>
+</tr>
+<tr>
+<td>Min grids per leaf</td>
+<td>20</td>
+<td>stops a tree memorising one customer</td>
+</tr>
+<tr>
+<td>L2 regularisation</td>
+<td>1.0</td>
+<td>shrinks extreme corrections</td>
+</tr>
+<tr>
+<td>Class weight</td>
+<td>balanced</td>
+<td>churners (9.5%) count as much as the 90.5%</td>
+</tr>
+</tbody>
+</table>
+<h3>Why it beat the other models</h3>
+<ul>
+<li><strong>Combinations:</strong> it captures combinations, such as "silent <em>and</em> no DTC <em>and</em> small", that a
+  points-based score can't express.</li>
+<li><strong>Missing values:</strong> it handles them natively, so a missing reporting allowance doesn't break it.</li>
+<li><strong>Overfitting control:</strong> many small careful steps generalise better than one big model.</li>
+</ul>
+<p><strong>Trade-off:</strong> it's harder to explain than a points table. That's why Step 9 (importance) matters,
+and why SHAP explanations per customer are a recommended next step.</p>
+<hr />
+<h2>Glossary</h2>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Feature / parameter</strong></td>
+<td>one measurable clue about a grid, e.g. days since last report</td>
+</tr>
+<tr>
+<td><strong>Label</strong></td>
+<td>the right answer: churned (1) or retained (0)</td>
+</tr>
+<tr>
+<td><strong>Training / testing</strong></td>
+<td>learning from some customers, then checking on unseen ones</td>
+</tr>
+<tr>
+<td><strong>Cross-validation</strong></td>
+<td>rotating which customers are held out, so every one is tested once</td>
+</tr>
+<tr>
+<td><strong>Overfitting</strong></td>
+<td>memorising the training customers instead of learning general patterns</td>
+</tr>
+<tr>
+<td><strong>Data leak</strong></td>
+<td>a clue that gives away the answer for the wrong reason</td>
+</tr>
+<tr>
+<td><strong>Threshold</strong></td>
+<td>the probability above which a grid is flagged</td>
+</tr>
+</tbody>
+</table></body></html>

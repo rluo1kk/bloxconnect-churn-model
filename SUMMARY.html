@@ -1,0 +1,162 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Churn Model Summary</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{color-scheme:light}
+body{background:#fff;color:#1a1a1a;font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;max-width:860px;margin:40px auto;padding:0 20px}
+h1{font-size:28px;border-bottom:2px solid #eee;padding-bottom:8px}
+h2{font-size:20px;margin-top:32px;color:#00594C}
+table{border-collapse:collapse;margin:12px 0;width:100%}
+th,td{border:1px solid #ddd;padding:7px 10px;text-align:left}
+th{background:#f4f6f5}
+tr:nth-child(even) td{background:#fafafa}
+code{background:#f2f2f2;padding:1px 5px;border-radius:4px;font-size:14px}
+li{margin:4px 0}
+</style></head><body><h1>Churn Model: Summary</h1>
+<h2>What we did</h2>
+<p>We tested the current Taxonomy churn score on real churned customers from Anand's HEKA data.
+We scored each one 3 months before it churned and compared it with the live fleet as
+"retained" customers. Then we built better models on the same data.</p>
+<h2>The current model</h2>
+<p><strong>Score = 25·Traffic falling off + 25·Shrinking deployment + 8·Going quiet + 8·Gone dark.</strong>
+A customer is flagged at 35 or more.</p>
+<p>In practice, a customer is only flagged when traffic is falling <strong>and</strong> members are being
+removed at the same time.</p>
+<h2>Results</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th style="text-align: right;">Current model</th>
+<th style="text-align: right;">Best new model (gradient boosting)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Churners caught</td>
+<td style="text-align: right;"><strong>1 of 378</strong></td>
+<td style="text-align: right;"><strong>163 of 378</strong></td>
+</tr>
+<tr>
+<td>Flags that were real churners</td>
+<td style="text-align: right;">4%</td>
+<td style="text-align: right;"><strong>42%</strong></td>
+</tr>
+<tr>
+<td>Churners found in the top 10% riskiest grids</td>
+<td style="text-align: right;">7%</td>
+<td style="text-align: right;"><strong>43%</strong></td>
+</tr>
+<tr>
+<td>ROC-AUC (0.5 = guessing, 1.0 = perfect)</td>
+<td style="text-align: right;">0.52</td>
+<td style="text-align: right;"><strong>0.84</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The current model shows <strong>90% "accuracy"</strong>, but that number is misleading. Only about 10% of
+customers churn, so flagging nobody also scores about 90%.</p>
+<h2>What we learned</h2>
+<ol>
+<li><strong>Customers don't wind down before they leave.</strong> Members, objects and traffic barely change in
+   the year before churn, and about half are still reporting after the contract ends. Churn is a
+   business decision, not a technical shutdown.</li>
+<li><strong>Going silent is the best warning sign.</strong> About a third of churners stop reporting for 21+
+   days in the months before churn, rising to 41% by the churn date. Among retained customers,
+   12% trip the "Gone dark" signal.</li>
+<li><strong>Who the customer is matters most.</strong> Churners are thin deployments:</li>
+<li>no DNS Traffic Control;</li>
+<li>low reporting use;</li>
+<li>about 3,000 daily queries vs 1.5 million for retained customers;</li>
+<li>fewer records, admins and dashboards.</li>
+</ol>
+<p>Infoblox isn't deeply embedded for them, so it's easy to replace.
+4. <strong>Two current signals work backwards.</strong> "Traffic falling off" and "Going quiet" fire <em>more</em>
+   often on customers who stayed.</p>
+<h2>What the best model relies on</h2>
+<table>
+<thead>
+<tr>
+<th>Family</th>
+<th style="text-align: right;">Importance (drop in ROC-AUC when removed)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Customer profile: how much of the product they use</td>
+<td style="text-align: right;"><strong>0.18</strong>, the biggest</td>
+</tr>
+<tr>
+<td>Silence: days since last report</td>
+<td style="text-align: right;"><strong>0.08</strong></td>
+</tr>
+<tr>
+<td>Trends: changes over 2 months</td>
+<td style="text-align: right;">0.02, almost nothing</td>
+</tr>
+<tr>
+<td>Current Taxonomy signals</td>
+<td style="text-align: right;">0.00</td>
+</tr>
+</tbody>
+</table>
+<p>Top 5 parameters:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">#</th>
+<th>Parameter</th>
+<th>Churners have…</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td>Days since last report</td>
+<td>longer silences</td>
+</tr>
+<tr>
+<td style="text-align: right;">2</td>
+<td>DNS Traffic Control members %</td>
+<td>0% (retained: 10%)</td>
+</tr>
+<tr>
+<td style="text-align: right;">3</td>
+<td>Reporting use vs allowance</td>
+<td>4% (retained: 10%)</td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td>Change in daily DNS queries</td>
+<td>no meaningful difference</td>
+</tr>
+<tr>
+<td style="text-align: right;">5</td>
+<td>Daily DNS queries</td>
+<td>about 3,000 (retained: about 1.5 million)</td>
+</tr>
+</tbody>
+</table>
+<h2>What to look at next</h2>
+<p><strong>Using HEKA data we already have:</strong>
+1. <strong>Signs of moving away from Infoblox:</strong> DNS zones showing up in AWS or Azure, more
+   forwarding or secondary zones, or Microsoft DNS taking over.
+2. <strong>Paid features used vs paid for:</strong> customers paying for features they don't use.
+3. <strong>Licence events:</strong> temporary licences, licences about to expire, licences being dropped.
+4. <strong>Old hardware or no upgrades for a long time:</strong> the hardware-refresh decision is a natural
+   moment to leave.
+5. <strong>Reporting patterns:</strong> intermittent reporting or opt-outs.</p>
+<p><strong>Needing other data:</strong>
+6. <strong>Salesforce / Gainsight:</strong> days to renewal, falling ARR, support cases, NPS.
+7. <strong>Moves to Infoblox cloud:</strong> some "churners" may have moved to BloxOne / Universal DDI, which
+   isn't a real loss.
+8. <strong>Admin logins and API use:</strong> true engagement, not collected today.</p>
+<p><strong>Test first:</strong> #1 and #7, which are possible today with data we already have.</p>
+<h2>Caveats</h2>
+<ul>
+<li>The "retained" group is a stand-in. It may include some churners, which would make the new
+  model look <em>worse</em> than it really is.</li>
+<li><strong>Ask Anand</strong> for the same data on customers who renewed, with account IDs. Rerunning
+  <code>python -m churn.run</code> then gives the final accuracy.</li>
+</ul>
+<p>Full detail: <code>docs/FINDINGS.md</code> · Model formula: <code>docs/MODEL.md</code> · All parameters:
+<code>reports/GB_FEATURES.md</code></p></body></html>
