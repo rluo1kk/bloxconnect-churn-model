@@ -110,7 +110,7 @@ model is kept unless another is significantly better; none was on the primary sp
 
 | Leak | How it showed up | Fix |
 |---|---|---|
-| **Era drift.** Churners are measured 2023–26, retained grids in 2026. | "enabled features per member", HTTP certificates and tenure separated the groups partly by *date* | era-stability test (step 3) |
+| **Era drift.** Churners are measured 2023–26, retained grids in 2026, so anything that changes over time looks different between them | "enabled features per member" (newer NIOS reports more), HTTP certificates, and tenure (grows automatically each year) separated the groups partly by *when they were measured* | the "stable over time" check in §3 removes any parameter that drifts with the date among churners; see SELECTION_STEPS_EXPLAINED |
 | **Weekday effect.** Churn dates fall on the 1st of a month. | raw "days since last report" leaked the weekday | replaced by **days silent beyond a normal week** |
 | **Data coverage.** "Newer NIOS releases available" is dated by first appearance in *our* telemetry | boosted model hit test AUC 0.95 on it | removed both release-age parameters |
 | **Who can be attributed to an account** | grids with no traceable account look like churners: 20K daily queries, 21% silent | kept out of "retained"; tested separately (§6) |

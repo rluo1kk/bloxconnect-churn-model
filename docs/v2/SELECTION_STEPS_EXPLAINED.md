@@ -58,6 +58,29 @@ Four checks happen at once here.
   HTTP certificates, share of virtual appliances, two geography flags and one zone count.
 - Effect here: 71 → **64**.
 
+**An analogy.** Compare phones of people who left a gym in 2023–2025 with phones of current members
+checked in 2026. The members' phones have more storage. That isn't because members are different
+people; phones just got bigger over those years. A model would wrongly learn "big phone storage →
+stays at the gym". Era drift is the same trap.
+
+**The cases caught in this project:**
+
+| Parameter | Why it changes with the date | Drift (ρ) | Churned vs retained: all churners → churners measured in 2026 only |
+|---|---|---:|---|
+| Enabled features per member | newer NIOS versions report more feature entries, and churners were measured on older software | +0.30 | 0.26 → 0.39: the gap shrinks a lot |
+| HTTP certificates | how certificates are recorded changed over time | −0.24 | 0.63 → 0.55 |
+| Customer tenure at scoring date | grows automatically: the same customer has more years in 2026 than in 2024 | +0.29 | 0.38 → 0.46 |
+
+How to read the table:
+- **ρ** is how strongly the parameter rises (+) or falls (−) with the measurement date, among
+  churners only. 0 means no drift.
+- **The last column** uses AUC, where 0.5 means no difference. Comparing only churners measured in
+  2026 (the same year as retained customers) shrinks each gap, which shows part of the difference
+  was the date rather than churn.
+
+**None of the final model's parameters drift:** silence, DTC adoption and employee count all have
+|ρ| ≤ 0.04.
+
 ---
 
 ## Step 2: Independent, Spearman |ρ| ≥ 0.7 (64 → 27)

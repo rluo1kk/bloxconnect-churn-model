@@ -84,6 +84,49 @@ this project.</p>
   HTTP certificates, share of virtual appliances, two geography flags and one zone count.</li>
 <li>Effect here: 71 → <strong>64</strong>.</li>
 </ul>
+<p><strong>An analogy.</strong> Compare phones of people who left a gym in 2023–2025 with phones of current members
+checked in 2026. The members' phones have more storage. That isn't because members are different
+people; phones just got bigger over those years. A model would wrongly learn "big phone storage →
+stays at the gym". Era drift is the same trap.</p>
+<p><strong>The cases caught in this project:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Why it changes with the date</th>
+<th style="text-align: right;">Drift (ρ)</th>
+<th>Churned vs retained: all churners → churners measured in 2026 only</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Enabled features per member</td>
+<td>newer NIOS versions report more feature entries, and churners were measured on older software</td>
+<td style="text-align: right;">+0.30</td>
+<td>0.26 → 0.39: the gap shrinks a lot</td>
+</tr>
+<tr>
+<td>HTTP certificates</td>
+<td>how certificates are recorded changed over time</td>
+<td style="text-align: right;">−0.24</td>
+<td>0.63 → 0.55</td>
+</tr>
+<tr>
+<td>Customer tenure at scoring date</td>
+<td>grows automatically: the same customer has more years in 2026 than in 2024</td>
+<td style="text-align: right;">+0.29</td>
+<td>0.38 → 0.46</td>
+</tr>
+</tbody>
+</table>
+<p>How to read the table:
+- <strong>ρ</strong> is how strongly the parameter rises (+) or falls (−) with the measurement date, among
+  churners only. 0 means no drift.
+- <strong>The last column</strong> uses AUC, where 0.5 means no difference. Comparing only churners measured in
+  2026 (the same year as retained customers) shrinks each gap, which shows part of the difference
+  was the date rather than churn.</p>
+<p><strong>None of the final model's parameters drift:</strong> silence, DTC adoption and employee count all have
+|ρ| ≤ 0.04.</p>
 <hr />
 <h2>Step 2: Independent, Spearman |ρ| ≥ 0.7 (64 → 27)</h2>
 <ul>
