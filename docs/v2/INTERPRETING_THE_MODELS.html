@@ -1,0 +1,179 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Interpreting the Models</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+:root{color-scheme:light}
+body{background:#fff;color:#1a1a1a;font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;max-width:860px;margin:40px auto;padding:0 20px}
+h1{font-size:28px;border-bottom:2px solid #eee;padding-bottom:8px}
+h2{font-size:20px;margin-top:32px;color:#00594C}
+table{border-collapse:collapse;margin:12px 0;width:100%}
+th,td{border:1px solid #ddd;padding:7px 10px;text-align:left}
+th{background:#f4f6f5}
+tr:nth-child(even) td{background:#fafafa}
+code{background:#f2f2f2;padding:1px 5px;border-radius:4px;font-size:14px}
+li{margin:4px 0}
+pre{background:#f6f8f7;border:1px solid #e3e6e4;padding:12px;border-radius:6px;font-size:14px;overflow-x:auto} pre code{background:none;padding:0} hr{border:0;border-top:1px solid #e3e6e4;margin:36px 0} em{color:#555}.formula{font-family:Georgia,serif;font-size:18px;text-align:center;background:#f6f8f7;border:1px solid #e3e6e4;padding:14px;border-radius:6px;margin:12px 0;line-height:1.8}</style></head><body><h1>How to interpret the gradient boosting model and the new model</h1>
+<p><strong>The short version:</strong>
+- <strong>Gradient boosting</strong> has no weights to read. You interpret it from the outside, by testing what
+  it relies on.
+- <strong>The new model</strong> is a logistic regression. You read it from the inside: each parameter has one
+  number that says how strongly, and in which direction, it moves churn risk.</p>
+<hr />
+<h2>1. Gradient boosting: interpret it by its behaviour</h2>
+<h3>How it decides</h3>
+<ul>
+<li>It's about <strong>400 small decision trees</strong>, each one a short chain of questions such as "silent for
+  more than 21 days? and no DNS Traffic Control? then raise the risk".</li>
+<li>Each tree corrects the mistakes left by the trees before it.</li>
+<li>A customer's score is <strong>the sum of all 400 trees' outputs</strong>, converted to a probability.</li>
+<li>No single tree, and no single number, explains the result.</li>
+</ul>
+<h3>Three ways to read it</h3>
+<table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Tool</th>
+<th>What it tells you</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>What does it rely on?</td>
+<td><strong>Permutation importance</strong>: scramble one parameter and see how much accuracy drops</td>
+<td>which parameters matter most (<code>reports/GB_FEATURES.md</code>)</td>
+</tr>
+<tr>
+<td>Which direction?</td>
+<td><strong>Partial dependence</strong>, or comparing churned and retained medians</td>
+<td>e.g. lower DTC adoption goes with higher risk</td>
+</tr>
+<tr>
+<td>Why <em>this</em> customer?</td>
+<td><strong>SHAP values</strong> (not built yet)</td>
+<td>per-account reasons, e.g. "+12 points from silence, −5 from DTC"</td>
+</tr>
+</tbody>
+</table>
+<h3>Cautions</h3>
+<ul>
+<li><strong>Importance isn't impact.</strong> It says the model <em>uses</em> a parameter, not how much risk changes per
+  unit.</li>
+<li><strong>Correlated parameters split the credit.</strong> DTC and RPZ share credit, so either one can look less
+  important than it really is.</li>
+<li><strong>It finds shortcuts.</strong> In this project, gradient boosting reached a fake AUC of 0.98, and later
+  0.95, by exploiting data artifacts. It's powerful, so it has to be audited.</li>
+<li><strong>In v2 it wasn't significantly better</strong> than the simple model: average AUC 0.859 vs 0.842,
+  p = 0.28. That's why it wasn't chosen.</li>
+</ul>
+<hr />
+<h2>2. The new model (logistic regression): read it directly</h2>
+<h3>The formula</h3>
+<div class="formula">churn score = −2.787 + 0.628 × silence − 0.872 × DTC − 0.479 × employees<br>
+churn probability = 1 ÷ (1 + e<sup>−score</sup>)</div>
+
+<p><strong>Its parts:</strong>
+- <strong>silence, DTC and employees</strong> are each customer's values put on a common scale: how unusual
+  the customer is compared with the average, in standard deviations.
+- Each raw value is <strong>log-transformed first</strong>, so going from 0 to 30 days of silence matters more
+  than going from 300 to 330.
+- <strong>The signs give the direction:</strong>
+  - silence is <strong>+</strong>, so more silence means more risk;
+  - DTC and employees are <strong>−</strong>, so more of either means less risk.
+- <strong>The size of each number gives the strength.</strong></p>
+<h3>The odds ratio: the easiest number to quote</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th style="text-align: right;">Odds ratio per standard deviation</th>
+<th>In words</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Silence</td>
+<td style="text-align: right;"><strong>1.87</strong></td>
+<td>each step up <strong>raises</strong> the odds of churn by <strong>87%</strong></td>
+</tr>
+<tr>
+<td>DTC adoption</td>
+<td style="text-align: right;"><strong>0.42</strong></td>
+<td>each step up <strong>cuts</strong> the odds by <strong>58%</strong></td>
+</tr>
+<tr>
+<td>Company size</td>
+<td style="text-align: right;"><strong>0.62</strong></td>
+<td>each step up <strong>cuts</strong> the odds by <strong>38%</strong></td>
+</tr>
+</tbody>
+</table>
+<h3>What the numbers mean for real customers</h3>
+<p>These are calculated with the fitted model.</p>
+<table>
+<thead>
+<tr>
+<th>Customer</th>
+<th style="text-align: right;">Churn probability (next 3 months)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Reporting normally, no DTC, 1,000 employees</td>
+<td style="text-align: right;"><strong>11%</strong>, about average</td>
+</tr>
+<tr>
+<td>Same, but <strong>half its members on DTC</strong></td>
+<td style="text-align: right;"><strong>2%</strong></td>
+</tr>
+<tr>
+<td>Same as the first, but <strong>silent 30 extra days</strong></td>
+<td style="text-align: right;"><strong>37%</strong></td>
+</tr>
+<tr>
+<td>Silent 30 days, no DTC, <strong>200 employees</strong></td>
+<td style="text-align: right;"><strong>45%</strong></td>
+</tr>
+<tr>
+<td>Reporting normally, full DTC, 10,000 employees</td>
+<td style="text-align: right;"><strong>1%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>This is the main advantage over gradient boosting: <strong>any customer's score can be explained with
+three facts.</strong></p>
+<h3>How to use the probabilities</h3>
+<ul>
+<li>The model was fitted on a sample where about <strong>10% of grids churn</strong>, close to reality. So "37%"
+  roughly means <em>about 37 in 100 customers like this would churn within 3 months</em>.</li>
+<li><strong>Rank customers by probability and work down the list.</strong></li>
+<li>The flag cut-off (about 18% in the primary run) is <strong>a dial</strong>:</li>
+<li>lower it to catch more churners, with more false alarms;</li>
+<li>raise it for fewer, more certain flags.</li>
+</ul>
+<h3>What it does <em>not</em> say</h3>
+<ul>
+<li><strong>It isn't causal.</strong> DTC users stay, but that may be because engaged customers buy DTC, not
+  because DTC keeps them. Offering DTC trials to thin deployments would test this.</li>
+<li><strong>It only sees customers who send telemetry.</strong> The 563 churned accounts with no HEKA data are
+  invisible to it.</li>
+</ul>
+<hr />
+<h2>3. Rule of thumb</h2>
+<table>
+<thead>
+<tr>
+<th>Use</th>
+<th>Model</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Decisions, dashboard scores, explaining a customer's risk</td>
+<td><strong>Logistic model (the new model)</strong></td>
+</tr>
+<tr>
+<td>Benchmark: is there a pattern we're missing?</td>
+<td><strong>Gradient boosting</strong></td>
+</tr>
+</tbody>
+</table>
+<p>If gradient boosting ever becomes <strong>significantly</strong> better than the logistic model, a new pattern
+exists in the data. Find it, and add it to the simple model.</p></body></html>
