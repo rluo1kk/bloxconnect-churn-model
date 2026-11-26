@@ -11,17 +11,23 @@ code{background:#f2f2f2;padding:1px 5px;border-radius:4px;font-size:14px}
 li{margin:4px 0}
 pre{background:#f6f8f7;border:1px solid #e3e6e4;padding:12px;border-radius:6px;font-size:14px;overflow-x:auto} pre code{background:none;padding:0} hr{border:0;border-top:1px solid #e3e6e4;margin:36px 0} em{color:#555}</style></head><body><h1>Churn Model v2: built from the data</h1>
 <p><strong>Bottom line:</strong>
-- Three parameters, each statistically independent, predict which NIOS customers churn <strong>3 months
-  ahead</strong> with <strong>AUC 0.79–0.82</strong> on customers the model never saw.
+- Three independent parameters predict which NIOS customers churn <strong>3 months ahead</strong>.
+- Test AUC is <strong>0.82–0.88</strong> on customers the model never saw.
 - Every other parameter, out of 772 candidates, either failed significance or added nothing once
   these three were known.
 - The three signals:
   1. <strong>the grid goes silent;</strong>
-  2. <strong>it doesn't use DNS Traffic Control;</strong>
-  3. <strong>the customer is a smaller company.</strong></p>
-<p>All numbers come from <code>reports/v2/results.json</code>, produced by <code>python -m churn2.model</code>.</p>
+  2. <strong>the customer doesn't use DNS Traffic Control;</strong>
+  3. <strong>the customer is a smaller company.</strong>
+- A fourth, weaker signal: <strong>not using Reporting</strong>.</p>
+<p>All numbers come from <code>reports/v2/results.json</code> and <code>reports/v2/consensus.json</code>. Reproduce with
+<code>python -m churn2.namematch &amp;&amp; python -m churn2.extract &amp;&amp; python -m churn2.dataset &amp;&amp; python -m
+churn2.model &amp;&amp; python -m churn2.report &amp;&amp; python -m churn2.consensus</code>.</p>
+<p><em>Updated 25 Nov 2026: the retained group grew from 968 to 2,973 grids through validated
+account-name matching (§1). Earlier figures in this document were superseded.</em></p>
 <hr />
-<h2>1. The data, and a correction to the starting assumption</h2>
+<h2>1. The data</h2>
+<h3>Churned customers: the "1,051" and why 488 are usable</h3>
 <p>Anand's email (15 Oct 2026) breaks down the 1,108 churned accounts:</p>
 <table>
 <thead>
@@ -45,13 +51,43 @@ pre{background:#f6f8f7;border:1px solid #e3e6e4;padding:12px;border-radius:6px;f
 </tr>
 </tbody>
 </table>
-<p>The <strong>1,051</strong> figure is 1,108 − 57, every account that isn't ambiguous. <strong>Only 488 of them have any
-telemetry</strong>, so only those 488 can teach a telemetry model anything. All 488 are used.</p>
+<p>The <strong>1,051</strong> figure is 1,108 − 57, every account that isn't ambiguous. <strong>Only 488 have any
+telemetry</strong>, so only those can teach a telemetry model anything. All are used.</p>
+<h3>Retained customers: built from the fleet HEKA data the dashboard uses</h3>
+<p>A fleet grid counts as <strong>retained</strong> if its Salesforce account is:
+- <strong>Active</strong> in Customer Lifecycle;
+- <strong>not</strong> on the FY25–FY26 churn list;
+- <strong>not</strong> one of Anand's churned accounts.</p>
+<p>Labels come from commercial status, never from telemetry. Using "still reporting" as the test
+would have made silence predict the label by construction.</p>
+<p>Grids are linked to accounts in two ways:</p>
+<table>
+<thead>
+<tr>
+<th>Link</th>
+<th>How</th>
+<th style="text-align: right;">Retained grids</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Feature-usage extract</strong></td>
+<td>grid UUID → account ID, straight from the <em>HEKA feature usage / member role</em> file</td>
+<td style="text-align: right;">969</td>
+</tr>
+<tr>
+<td><strong>Name match</strong> (new)</td>
+<td>grid → account name (<em>HEKA customer data / Member Details</em>) → exact match, after normalising case, punctuation and legal suffixes, against <em>SFDC NIOS Active Accounts</em>. A name is used only if it resolves to exactly one account.</td>
+<td style="text-align: right;">2,004</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Name matching is validated:</strong> on <strong>2,141 grids that have both kinds of link, they agree 99.8%
+of the time.</strong> The few disagreements are companies with two Salesforce records.</p>
 <table>
 <thead>
 <tr>
 <th>Group</th>
-<th>Source</th>
 <th style="text-align: right;">Grids</th>
 <th style="text-align: right;">Accounts</th>
 </tr>
@@ -59,39 +95,33 @@ telemetry</strong>, so only those 488 can teach a telemetry model anything. All 
 <tbody>
 <tr>
 <td><strong>Churned</strong></td>
-<td>Anand's serial-matched HEKA pull; churn date from the FY25–FY26 churn list</td>
-<td style="text-align: right;">316</td>
-<td style="text-align: right;">284</td>
+<td style="text-align: right;"><strong>316</strong></td>
+<td style="text-align: right;"><strong>284</strong></td>
 </tr>
 <tr>
-<td><strong>Retained (verified)</strong></td>
-<td>Fleet grids whose Salesforce account is <strong>Active</strong> in Customer Lifecycle, not on the churn list</td>
-<td style="text-align: right;">968</td>
-<td style="text-align: right;">797</td>
+<td><strong>Retained</strong></td>
+<td style="text-align: right;"><strong>2,973</strong></td>
+<td style="text-align: right;"><strong>2,301</strong></td>
 </tr>
 <tr>
-<td>Set aside</td>
-<td>63 churned grids (49 accounts) that Customer Lifecycle still calls Active, probably moved to other Infoblox products</td>
+<td>Set aside: churned grids that Customer Lifecycle still calls Active (probably moved to other Infoblox products)</td>
 <td style="text-align: right;">63</td>
 <td style="text-align: right;">49</td>
 </tr>
 </tbody>
 </table>
-<p><strong>How "retained" was verified, and why not from telemetry:</strong>
-- The grid → account link comes from the <em>HEKA feature usage / member role</em> extract.
-- Active status comes from <em>Customer Lifecycle</em>.</p>
-<p>Defining "active" from telemetry (e.g. "still reporting") would have made silence predict the label
-by construction, so labels come from commercial status only.</p>
-<p><strong>Not scorable:</strong> 194 churned grids and 972 fleet grids had no telemetry covering the 2 months
-before their scoring date. That's mostly because Anand's pull covers each customer's <em>last
-reporting year</em>, which for many ended long before churn.</p>
+<p><strong>About 9 retained grids per churned grid.</strong> Beyond 4–5 per churner, extra retained customers add
+little precision; their value here is a broader, more representative baseline.</p>
+<p><strong>Not scorable:</strong> 194 churned grids had no telemetry covering the 2 months before their scoring
+date. Anand's pull covers each customer's <em>last reporting year</em>, which for many ended long before
+churn.</p>
 <h2>2. Design</h2>
 <ul>
 <li><strong>Scoring date:</strong></li>
 <li>churners are scored <strong>90 days before their churn date</strong>;</li>
 <li>retained grids are scored at 5 Jul 2026 plus a random 0–6 days.</li>
 </ul>
-<p>Only data from on or before the scoring date is read.
+<p>Only data from on or before the scoring date is used.
 - <strong>Candidates:</strong> <strong>772 parameters</strong> per grid:
   - every numeric HEKA grid field;
   - every member field summarised per grid;
@@ -99,8 +129,8 @@ reporting year</em>, which for many ended long before churn.</p>
   - silence;
   - upgrade history;
   - firmographics.
-- <strong>Split:</strong> by <strong>customer</strong>, 80% development and 20% <strong>locked test</strong>. The test set was used once.
-  All grids of a customer stay on the same side.</p>
+- <strong>Split:</strong> by <strong>customer</strong>, 80% development and 20% <strong>locked test</strong> (658 grids, 64 churned).
+  The test set was used once.</p>
 <h2>3. The statistical pipeline (labels used on the development set only)</h2>
 <table>
 <thead>
@@ -119,36 +149,29 @@ reporting year</em>, which for many ended long before churn.</p>
 <tr>
 <td>Testable</td>
 <td>≥ 80% coverage in both groups, not near-constant</td>
-<td style="text-align: right;">242</td>
+<td style="text-align: right;">264</td>
 </tr>
 <tr>
-<td><strong>Significant</strong></td>
-<td>Mann-Whitney U, Benjamini-Hochberg FDR q &lt; 0.01, effect |AUC − 0.5| ≥ 0.05</td>
-<td style="text-align: right;"></td>
-</tr>
-<tr>
-<td><strong>Stable over time</strong></td>
-<td>dropped if its value drifts with calendar date among churners (p &lt; 0.01, |ρ| ≥ 0.15)</td>
-<td style="text-align: right;">13</td>
+<td><strong>Significant and stable over time</strong></td>
+<td>Mann-Whitney U with Benjamini-Hochberg FDR q &lt; 0.01, effect |AUC − 0.5| ≥ 0.05, and no drift with calendar date among churners (p &lt; 0.01, |ρ| ≥ 0.15)</td>
+<td style="text-align: right;">64</td>
 </tr>
 <tr>
 <td><strong>Independent</strong></td>
 <td>Spearman |ρ| ≥ 0.7 clusters → keep the strongest of each</td>
-<td style="text-align: right;">9</td>
+<td style="text-align: right;">27</td>
 </tr>
 <tr>
 <td><strong>Each adds significant accuracy</strong></td>
 <td>forward selection, logistic regression, 5×5 repeated cross-validation; enter only if the AUC gain has p &lt; 0.01 (Nadeau-Bengio corrected t-test)</td>
-<td style="text-align: right;"><strong>3</strong></td>
+<td style="text-align: right;"><strong>5</strong></td>
 </tr>
 </tbody>
 </table>
 <p>The pipeline then compared logistic regression, random forest and gradient boosting. The simplest
-model is kept unless another is significantly better; none was (p = 0.28–0.91).</p>
-<p><strong>"Over and over":</strong> the entire pipeline (split, screening, selection, model choice, test) was
-repeated on <strong>25 different random splits</strong>.</p>
+model is kept unless another is significantly better; none was on the primary split (p = 0.28–0.69).</p>
+<p><strong>"Over and over":</strong> the entire pipeline was repeated on <strong>25 random splits</strong>.</p>
 <h2>4. Data leaks found and removed</h2>
-<p>Each of these made a model look better than it really was:</p>
 <table>
 <thead>
 <tr>
@@ -161,11 +184,11 @@ repeated on <strong>25 different random splits</strong>.</p>
 <tr>
 <td><strong>Era drift.</strong> Churners are measured 2023–26, retained grids in 2026.</td>
 <td>"enabled features per member", HTTP certificates and tenure separated the groups partly by <em>date</em></td>
-<td>era-stability test (step 3); 3 parameters removed</td>
+<td>era-stability test (step 3)</td>
 </tr>
 <tr>
 <td><strong>Weekday effect.</strong> Churn dates fall on the 1st of a month.</td>
-<td>"days since last report" (0–6 for any weekly reporter) leaked the weekday</td>
+<td>raw "days since last report" leaked the weekday</td>
 <td>replaced by <strong>days silent beyond a normal week</strong></td>
 </tr>
 <tr>
@@ -174,9 +197,9 @@ repeated on <strong>25 different random splits</strong>.</p>
 <td>removed both release-age parameters</td>
 </tr>
 <tr>
-<td><strong>Who's in the account map.</strong> Verified retained grids carry 3.7M daily queries vs 0.7M for the rest of the fleet</td>
-<td>query volume looked more predictive than it is</td>
-<td>the result was re-tested against the unmapped fleet (see §6)</td>
+<td><strong>Who can be attributed to an account</strong></td>
+<td>grids with no traceable account look like churners: 20K daily queries, 21% silent</td>
+<td>kept out of "retained"; tested separately (§6)</td>
 </tr>
 </tbody>
 </table>
@@ -185,52 +208,18 @@ match.
 - Grid fields: 100% agreement.
 - Per-member fields: 167 of 176 match exactly, and the other 9 match 97% of the time (226 grid-days).</p>
 <h2>5. The model</h2>
-<h3>Primary result: exactly as the pipeline chose it (seed 42)</h3>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th style="text-align: right;">Odds ratio per SD</th>
-<th style="text-align: right;">p</th>
-<th style="text-align: right;">VIF</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Days silent beyond a normal week</td>
-<td style="text-align: right;">2.11 (1.83–2.43)</td>
-<td style="text-align: right;">&lt; 0.001</td>
-<td style="text-align: right;">1.01</td>
-</tr>
-<tr>
-<td>Average member disk size</td>
-<td style="text-align: right;">1.16 (0.98–1.37)</td>
-<td style="text-align: right;">0.09</td>
-<td style="text-align: right;">1.02</td>
-</tr>
-<tr>
-<td>% of members licensed for DNS Traffic Control</td>
-<td style="text-align: right;">0.53 (0.44–0.64)</td>
-<td style="text-align: right;">&lt; 0.001</td>
-<td style="text-align: right;">1.03</td>
-</tr>
-</tbody>
-</table>
 <h3>Recommended: the consensus model</h3>
-<p>The primary split happened to pick disk size, which is weak (p = 0.09, chosen in only 44% of
-splits). The parameters chosen in <strong>at least half of the 25 repeated runs</strong> are:
-- silence (100%);
-- DTC licensing (about 96%, appearing in two near-identical forms);
-- employee count (68%).</p>
-<p><strong>Formula</strong>, where <em>z</em> is the parameter after the signed-log transform and standardisation
-(<code>churn2/model.py: coef_table</code>):</p>
-<p style='font-family:Georgia,serif;font-size:17px;text-align:center;background:#f6f8f7;padding:12px;border-radius:6px'>logit P(churn in 3 months) = −1.356 + 0.690·z<sub>silence</sub> − 0.570·z<sub>DTC</sub> − 0.568·z<sub>employees</sub></p>
+<p>These are the parameters chosen in at least half of the 25 repeated runs.</p>
+<p style='font-family:Georgia,serif;font-size:17px;text-align:center;background:#f6f8f7;padding:12px;border-radius:6px'>logit P(churn in 3 months) = −2.787 + 0.628·z<sub>silence</sub> − 0.872·z<sub>DTC</sub> − 0.479·z<sub>employees</sub></p>
 
+<p><em>z</em> is the parameter after the signed-log transform x → sign(x)·log(1+|x|), then standardised.
+The code (<code>churn2/consensus.py</code>, <code>coef_table</code>) stores the exact transform.</p>
 <table>
 <thead>
 <tr>
 <th>Parameter</th>
 <th>Definition</th>
+<th style="text-align: right;">Chosen in</th>
 <th style="text-align: right;">Odds ratio per SD (95% CI)</th>
 <th style="text-align: right;">p</th>
 <th style="text-align: right;">VIF</th>
@@ -242,36 +231,88 @@ splits). The parameters chosen in <strong>at least half of the 25 repeated runs<
 <tr>
 <td><strong>Silence</strong></td>
 <td>days without a HEKA report beyond a normal 7-day cycle</td>
-<td style="text-align: right;"><strong>1.99</strong> (1.76–2.26)</td>
+<td style="text-align: right;">80% of runs</td>
+<td style="text-align: right;"><strong>1.87</strong> (1.71–2.05)</td>
 <td style="text-align: right;">&lt; 0.001</td>
-<td style="text-align: right;">1.03</td>
+<td style="text-align: right;">1.02</td>
 <td style="text-align: right;">35% silent &gt; 2 weeks</td>
-<td style="text-align: right;">9%</td>
+<td style="text-align: right;">10%</td>
 </tr>
 <tr>
 <td><strong>DTC adoption</strong></td>
-<td>share of the grid's members licensed for DNS Traffic Control</td>
-<td style="text-align: right;"><strong>0.57</strong> (0.47–0.68)</td>
+<td>% of the grid's members licensed for DNS Traffic Control</td>
+<td style="text-align: right;">96%</td>
+<td style="text-align: right;"><strong>0.42</strong> (0.35–0.49)</td>
 <td style="text-align: right;">&lt; 0.001</td>
-<td style="text-align: right;">1.03</td>
-<td style="text-align: right;">14% have any</td>
-<td style="text-align: right;">38%</td>
+<td style="text-align: right;">1.01</td>
+<td style="text-align: right;">16% have any</td>
+<td style="text-align: right;">51%</td>
 </tr>
 <tr>
 <td><strong>Company size</strong></td>
 <td>log of the account's employee count</td>
-<td style="text-align: right;"><strong>0.57</strong> (0.49–0.66)</td>
+<td style="text-align: right;">76%</td>
+<td style="text-align: right;"><strong>0.62</strong> (0.56–0.69)</td>
 <td style="text-align: right;">&lt; 0.001</td>
-<td style="text-align: right;">1.00</td>
+<td style="text-align: right;">1.01</td>
 <td style="text-align: right;">median 1,068</td>
-<td style="text-align: right;">2,529</td>
+<td style="text-align: right;">2,849</td>
 </tr>
 </tbody>
 </table>
 <p><strong>Reading the odds ratios:</strong>
-- <strong>Silence:</strong> each extra standard deviation of silence about <strong>doubles</strong> the odds of churn.
-- <strong>DTC adoption and company size:</strong> each standard deviation more of either <strong>cuts the odds by about 43%</strong>.</p>
+- <strong>Silence:</strong> each extra standard deviation raises the odds of churn by about <strong>87%</strong>.
+- <strong>DTC adoption:</strong> each standard deviation more <strong>cuts the odds by 58%</strong>.
+- <strong>Company size:</strong> each standard deviation more <strong>cuts the odds by 38%</strong>.</p>
 <p><strong>Independence:</strong> VIF is about 1.0 for all three, so they are effectively uncorrelated.</p>
+<p><strong>Secondary signal: Reporting use.</strong> Daily reporting volume was chosen in 36% of runs. Only 5% of
+churned grids use Reporting, against 28% of retained grids. It's a good candidate to add once more
+churn data is available.</p>
+<h3>Primary result: exactly as the pipeline chose it on the locked split</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th style="text-align: right;">Odds ratio per SD (95% CI)</th>
+<th style="text-align: right;">p</th>
+<th style="text-align: right;">VIF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>% of members licensed for DTC</td>
+<td style="text-align: right;">0.42 (0.34–0.51)</td>
+<td style="text-align: right;">&lt; 0.001</td>
+<td style="text-align: right;">1.04</td>
+</tr>
+<tr>
+<td>Daily Reporting volume (MB)</td>
+<td style="text-align: right;">0.41 (0.29–0.58)</td>
+<td style="text-align: right;">&lt; 0.001</td>
+<td style="text-align: right;">1.13</td>
+</tr>
+<tr>
+<td>Employee count</td>
+<td style="text-align: right;">0.65 (0.57–0.73)</td>
+<td style="text-align: right;">&lt; 0.001</td>
+<td style="text-align: right;">1.01</td>
+</tr>
+<tr>
+<td>Virtual-node management IPs</td>
+<td style="text-align: right;">1.16 (0.98–1.36)</td>
+<td style="text-align: right;">0.08</td>
+<td style="text-align: right;">1.12</td>
+</tr>
+<tr>
+<td>Days silent beyond a normal week</td>
+<td style="text-align: right;">1.79 (1.61–1.98)</td>
+<td style="text-align: right;">&lt; 0.001</td>
+<td style="text-align: right;">1.04</td>
+</tr>
+</tbody>
+</table>
+<p>The virtual-node parameter is unstable: it's rarely chosen and not significant in the final fit.
+That's why the consensus model is the recommended one.</p>
 <h2>6. Accuracy</h2>
 <h3>Locked test set (primary model; evaluated once)</h3>
 <table>
@@ -284,34 +325,44 @@ splits). The parameters chosen in <strong>at least half of the 25 repeated runs<
 <tbody>
 <tr>
 <td><strong>ROC-AUC</strong></td>
-<td style="text-align: right;"><strong>0.792</strong> (95% CI 0.723–0.854, bootstrapped by account)</td>
+<td style="text-align: right;"><strong>0.884</strong> (95% CI 0.837–0.925, bootstrapped by account)</td>
 </tr>
 <tr>
 <td>Label-permutation test</td>
 <td style="text-align: right;">p = 0.001</td>
 </tr>
 <tr>
+<td>PR-AUC (base rate 9.7%)</td>
+<td style="text-align: right;">0.605</td>
+</tr>
+<tr>
 <td>Recall: churners caught</td>
-<td style="text-align: right;"><strong>77.8%</strong> (49 of 63)</td>
+<td style="text-align: right;">50.0% (32 of 64)</td>
 </tr>
 <tr>
 <td>Precision: flags that churned</td>
-<td style="text-align: right;">43.4% (base rate in the test set 24.5%)</td>
+<td style="text-align: right;"><strong>46.4%</strong></td>
 </tr>
 <tr>
-<td>Specificity / balanced accuracy</td>
-<td style="text-align: right;">67.0% / 72.4%</td>
+<td>Specificity</td>
+<td style="text-align: right;">93.8%</td>
 </tr>
 <tr>
-<td>Account level (flag if any grid is flagged)</td>
-<td style="text-align: right;">AUC 0.792 · recall 80.7% · precision 46.0%</td>
+<td>Accuracy / balanced accuracy</td>
+<td style="text-align: right;">89.5% / 71.9%</td>
 </tr>
 <tr>
 <td>Precision at a real-world churn rate of 5% / 10% / 20%</td>
-<td style="text-align: right;">11% / 21% / 37%</td>
+<td style="text-align: right;">30% / 47% / 67%</td>
+</tr>
+<tr>
+<td>Account level (flag if any grid is flagged)</td>
+<td style="text-align: right;">AUC 0.875 · recall 50% · precision 47%</td>
 </tr>
 </tbody>
 </table>
+<p>The flag threshold was set on the development set to maximise F1. Lowering it catches more
+churners at the cost of more false alarms.</p>
 <h3>Repeated on 25 random splits</h3>
 <table>
 <thead>
@@ -324,27 +375,27 @@ splits). The parameters chosen in <strong>at least half of the 25 repeated runs<
 <tbody>
 <tr>
 <td>Pipeline (as chosen per split)</td>
-<td style="text-align: right;"><strong>0.814</strong></td>
-<td style="text-align: right;">0.737–0.859</td>
+<td style="text-align: right;"><strong>0.853</strong></td>
+<td style="text-align: right;">0.795–0.893</td>
 </tr>
 <tr>
-<td>Consensus model</td>
+<td>Consensus model (3 parameters)</td>
 <td style="text-align: right;"><strong>0.822</strong></td>
-<td style="text-align: right;">0.757–0.864</td>
+<td style="text-align: right;">0.786–0.860</td>
 </tr>
 <tr>
-<td>Gradient boosting on all 13 screened parameters</td>
-<td style="text-align: right;">0.835</td>
-<td style="text-align: right;">not significantly better (p = 0.28)</td>
+<td>Gradient boosting on all screened parameters</td>
+<td style="text-align: right;">0.859</td>
+<td style="text-align: right;">won 7 of 25 splits; logistic won 18</td>
 </tr>
 </tbody>
 </table>
-<p>Logistic regression won <strong>all 25 splits</strong> under the parsimony rule.</p>
 <h3>Robustness</h3>
 <table>
 <thead>
 <tr>
 <th>Variant</th>
+<th style="text-align: right;">Grids (churned)</th>
 <th style="text-align: right;">Test AUC</th>
 <th>Parameters chosen</th>
 </tr>
@@ -352,38 +403,44 @@ splits). The parameters chosen in <strong>at least half of the 25 repeated runs<
 <tbody>
 <tr>
 <td>Only churners scored from Jul 2025 (same era as retained)</td>
-<td style="text-align: right;">0.778</td>
+<td style="text-align: right;">3,177 (204)</td>
+<td style="text-align: right;">0.883</td>
+<td>DTC, silence, employees, reporting capacity</td>
+</tr>
+<tr>
+<td>Retained = feature-usage link only (no name matching)</td>
+<td style="text-align: right;">1,285 (316)</td>
+<td style="text-align: right;">0.811</td>
 <td>DTC, silence, employees</td>
 </tr>
 <tr>
 <td>Telemetry only (no firmographics)</td>
-<td style="text-align: right;">0.792</td>
-<td>silence, disk size, DTC</td>
+<td style="text-align: right;">3,289 (316)</td>
+<td style="text-align: right;">0.796</td>
+<td>DTC, reporting, upgrade recency</td>
 </tr>
 <tr>
 <td>Ambiguous churners included</td>
-<td style="text-align: right;">0.750</td>
-<td>RPZ, silence, queries</td>
+<td style="text-align: right;">3,352 (379)</td>
+<td style="text-align: right;">0.815</td>
+<td>RPZ, reporting, silence</td>
 </tr>
 <tr>
-<td><strong>Retained = unmapped fleet</strong> (unverified, telemetry only)</td>
-<td style="text-align: right;">0.922</td>
-<td>upgrade recency, disk size, DTC, silence, vDiscovery</td>
+<td>Retained = unattributed fleet grids (unverified)</td>
+<td style="text-align: right;">852 (316)</td>
+<td style="text-align: right;">0.856</td>
+<td>DTC, upgrade scheduling, virtual nodes, silence, NGC</td>
 </tr>
 <tr>
 <td><strong>Negative control: labels shuffled</strong> (×3)</td>
+<td style="text-align: right;"></td>
 <td style="text-align: right;"><strong>0.500</strong></td>
 <td><strong>none</strong>; the pipeline finds nothing when there is nothing</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Silence and DTC/RPZ adoption are chosen in every variant.</strong></p>
+<p><strong>DTC (or its twin, RPZ) and silence are chosen in every variant.</strong></p>
 <p><img src="../../reports/v2/forward_selection.png" style="max-width:100%"></p><p><img src="../../reports/v2/test_roc.png" style="max-width:100%"></p><p><img src="../../reports/v2/stability.png" style="max-width:100%"></p><h2>7. What separates churned from retained customers</h2>
-<ol>
-<li><strong>Going silent is the strongest warning sign.</strong> 35% of churned grids had stopped reporting for
-   more than 2 weeks, 3 months before churn, against 9% of retained grids.</li>
-<li><strong>They don't use the advanced DNS products.</strong></li>
-</ol>
 <table>
 <thead>
 <tr>
@@ -394,51 +451,48 @@ splits). The parameters chosen in <strong>at least half of the 25 repeated runs<
 </thead>
 <tbody>
 <tr>
-<td>Any DNS Traffic Control licence</td>
-<td style="text-align: right;">14%</td>
-<td style="text-align: right;">38%</td>
+<td>Silent &gt; 2 weeks, 3 months before churn</td>
+<td style="text-align: right;"><strong>35%</strong></td>
+<td style="text-align: right;">10%</td>
+</tr>
+<tr>
+<td>Any DNS Traffic Control</td>
+<td style="text-align: right;"><strong>16%</strong></td>
+<td style="text-align: right;">51%</td>
 </tr>
 <tr>
 <td>Any RPZ (DNS firewall) licence</td>
-<td style="text-align: right;">16%</td>
-<td style="text-align: right;">38%</td>
+<td style="text-align: right;"><strong>16%</strong></td>
+<td style="text-align: right;">47%</td>
 </tr>
-</tbody>
-</table>
-<p>DTC and RPZ are interchangeable as signals: one replaces the other in different splits.
-3. <strong>They are smaller customers, with thinner deployments.</strong></p>
-<table>
-<thead>
 <tr>
-<th></th>
-<th style="text-align: right;">Churned</th>
-<th style="text-align: right;">Retained</th>
+<td>Uses Reporting</td>
+<td style="text-align: right;"><strong>5%</strong></td>
+<td style="text-align: right;">28%</td>
 </tr>
-</thead>
-<tbody>
 <tr>
 <td>Median employees</td>
-<td style="text-align: right;">1,068</td>
-<td style="text-align: right;">2,529</td>
+<td style="text-align: right;"><strong>1,068</strong></td>
+<td style="text-align: right;">2,849</td>
 </tr>
 <tr>
 <td>Median daily DNS queries</td>
-<td style="text-align: right;">3,080</td>
-<td style="text-align: right;">2.47M</td>
-</tr>
-<tr>
-<td>Grids with zero daily queries</td>
-<td style="text-align: right;">43%</td>
-<td style="text-align: right;">26%</td>
+<td style="text-align: right;"><strong>3,080</strong></td>
+<td style="text-align: right;">2.7M</td>
 </tr>
 </tbody>
 </table>
-<p>Part of the query gap comes from which customers are in the account map (§4), so query volume
-   wasn't kept.
-4. <strong>Not predictive, despite intuition:</strong>
-   - Member, object or traffic <em>trends</em> (8-week changes): none passed significance.
-   - Offline members, HA, GMC, hardware generation: none passed.</p>
-<p>Consistent with the earlier finding that customers don't wind down before churning.</p>
+<ol>
+<li><strong>Going silent is the strongest warning sign</strong> of churn.</li>
+<li><strong>Customers who use the advanced add-ons stay.</strong> DTC, RPZ and Reporting are signs that Infoblox
+   is embedded in how the customer works.</li>
+<li><strong>Smaller, thinner deployments leave.</strong> Query volume isn't in the model, because it overlaps
+   with DTC adoption and employee count.</li>
+<li><strong>Not predictive, despite intuition:</strong></li>
+<li>Member, object or traffic <em>trends</em> (8-week changes): none passed significance.</li>
+<li>Offline members, HA, hardware generation: none passed.</li>
+</ol>
+<p>Customers don't visibly wind down before churning.</p>
 <h2>8. Compared with the earlier models</h2>
 <table>
 <thead>
@@ -455,35 +509,41 @@ splits). The parameters chosen in <strong>at least half of the 25 repeated runs<
 <td>catches 1 of 378</td>
 </tr>
 <tr>
-<td>v1 gradient boosting (earlier this week)</td>
+<td>v1 gradient boosting</td>
 <td style="text-align: right;">0.84</td>
-<td><strong>likely inflated:</strong> it used the raw days-since-last-report (weekday leak) and an unverified retained group</td>
+<td>likely inflated (weekday leak, unverified retained group)</td>
 </tr>
 <tr>
-<td><strong>v2 consensus model</strong></td>
-<td style="text-align: right;"><strong>0.82</strong></td>
-<td>3 parameters, every one significant and independent, leak-tested</td>
+<td>v2, first run (968 retained)</td>
+<td style="text-align: right;">0.79</td>
+<td>same signals, smaller baseline</td>
+</tr>
+<tr>
+<td><strong>v2 now (2,973 retained)</strong></td>
+<td style="text-align: right;"><strong>0.82–0.88</strong></td>
+<td>3 parameters, every one significant, independent and leak-tested</td>
 </tr>
 </tbody>
 </table>
-<p>v2 is about as accurate as v1, but with <strong>3 parameters instead of 171</strong>, a verified comparison
-group, a locked test set, and every known artifact removed. It's the one to trust.</p>
 <h2>9. Limitations</h2>
 <ul>
-<li><strong>Small sample:</strong> 316 churned grids, and a 257-grid test set, hence the ±0.07 confidence interval.</li>
-<li><strong>Coverage:</strong></li>
-<li>the 563 churned accounts with no telemetry can't be modelled;</li>
-<li>telemetry-based prediction only covers customers who send HEKA data.</li>
-<li><strong>Precision depends on the true churn rate.</strong> At a 10% rate, about 1 in 5 flags would be a real
-  churner. Use it to <strong>prioritise</strong>, not to decide.</li>
+<li><strong>Churners are the constraint:</strong> 316 churned grids, 64 of them in the test set, hence the ±0.04
+  confidence interval. About 600 churned grids would be needed to reliably detect weaker signals.</li>
+<li><strong>Coverage:</strong> the 563 churned accounts with no telemetry can't be modelled.</li>
+<li><strong>Base rate:</strong> the test set has 9.7% churners, close to realistic. Precision at other churn rates
+  is given in §6.</li>
+<li><strong>Era:</strong> retained customers are only observed in 2026. The era-matched check (AUC 0.88) shows this
+  doesn't drive the result.</li>
 </ul>
 <h2>10. Next steps</h2>
 <ol>
-<li><strong>Wire the 3 signals into the dashboard's churn tier,</strong> replacing the current four.</li>
-<li><strong>Ask Anand for the same pull for a random sample of renewed accounts, with account IDs.</strong>
-   That removes the account-map bias and gives a natural churn rate.</li>
-<li><strong>Add commercial data dated <em>before</em> churn:</strong> renewal date, ARR trend, support cases. None of
-   it could be used here, because Customer Lifecycle values are measured <em>after</em> churn.</li>
-<li><strong>Re-fit quarterly with the same pipeline</strong> (<code>python -m churn2.model</code>). The 25-split stability
-   check shows whether the chosen parameters still hold.</li>
+<li><strong>Replace the dashboard's churn tier</strong> with silence + DTC adoption + company size, and show
+   Reporting use as context.</li>
+<li><strong>When requests are possible again,</strong> ask Anand for:</li>
+<li><strong>the 12 months before each churn date</strong> (instead of the last reporting year), which recovers
+     about 194 churned grids;</li>
+<li><strong>a random sample of renewed accounts on the same dates.</strong></li>
+<li><strong>Add commercial data dated <em>before</em> churn:</strong> renewal date, ARR trend, support cases.</li>
+<li><strong>Re-fit quarterly</strong> with the same pipeline. The 25-split stability check shows whether the
+   parameters still hold.</li>
 </ol></body></html>

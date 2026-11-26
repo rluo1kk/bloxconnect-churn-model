@@ -1,5 +1,5 @@
 """Consensus model: the parameters selected in >= 50% of the 25 repeated pipeline runs
-(DTC appears in two near-identical forms; the member-level one is used).
+(DTC appears in two near-identical forms; the grid-level one, chosen in 96% of runs, is used).
 
     python -m churn2.consensus     # -> reports/v2/consensus.json
 
@@ -17,7 +17,7 @@ from churn import config
 from .dataset import OUT as DATASET
 from .model import R, coef_table, make_lr, split
 
-FEATURES = ["rec.days_silent_beyond_week", "mem.share_lic_dtc", "firmo.log_employees"]
+FEATURES = ["rec.days_silent_beyond_week", "grid_feature_usage.dtc.members_pct", "firmo.log_employees"]
 
 
 def main():

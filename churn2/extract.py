@@ -254,6 +254,20 @@ def grid_account_map():
     return gf.set_index("grid_id")["account_id"], len(ambiguous)
 
 
+def full_account_map(grid_ids):
+    """Trusted feature-usage map, extended by name matching (churn2.namematch, 99.8% agreement
+    with the trusted map where both exist). Returns {grid_id: (account_id, source)}."""
+    g2a, _ = grid_account_map()
+    out = {g: (a, "feature_usage_extract") for g, a in g2a.items()}
+    nm_path = config.DATA_DIR / "v2_name_map.pkl"
+    if nm_path.exists():
+        nm = pd.read_pickle(nm_path).set_index("grid30")["account_id"]
+        for g in grid_ids:
+            if g not in out and g[:30] in nm.index:
+                out[g] = (nm[g[:30]], "name_match")
+    return out
+
+
 def main():
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     g2a, n_amb = grid_account_map()
@@ -264,7 +278,13 @@ def main():
     # unmapped grids form the secondary (unverified) reference group
     wg, wm = load_weekly(None, exclude=churn_grids)
     G = pd.DataFrame(cg + wg)
-    G.loc[G.source == "weekly", "account_id"] = G.loc[G.source == "weekly", "grid_id"].map(g2a)
+    amap = full_account_map(set(G.loc[G.source == "weekly", "grid_id"]))
+    wk = G.source == "weekly"
+    G.loc[wk, "account_id"] = G.loc[wk, "grid_id"].map(lambda g: amap.get(g, (None, None))[0])
+    G["map_source"] = None
+    G.loc[wk, "map_source"] = G.loc[wk, "grid_id"].map(lambda g: amap.get(g, (None, None))[1])
+    print(f"fleet grids with an account: {G.loc[wk].dropna(subset=['account_id']).grid_id.nunique():,} "
+          f"(name-matched: {G.loc[wk & (G.map_source == 'name_match')].grid_id.nunique():,})", file=sys.stderr)
     G = (G.dropna(subset=["collected_at"]).sort_values("collected_at")
          .assign(day=lambda x: x.collected_at.dt.floor("D"))
          .drop_duplicates(["source", "grid_id", "day"], keep="last").drop(columns="day"))

@@ -47,7 +47,7 @@ from .dataset import OUT as DATASET, OUT_UNVERIFIED
 
 warnings.filterwarnings("ignore")
 R = config.REPORTS_DIR / "v2"
-META = ["grid_id", "account_id", "source", "T", "churn_date", "label", "ambiguous_churn", "ref_group"]
+META = ["grid_id", "account_id", "source", "T", "churn_date", "label", "ambiguous_churn", "ref_group", "map_source"]
 FDR_Q, MIN_EFFECT, RHO_MAX, P_ENTER, MIN_GAIN = 0.01, 0.05, 0.7, 0.01, 0.005
 ERA_P, ERA_RHO = 0.01, 0.15   # a parameter that drifts with calendar date among churners is excluded
 K, REPEATS = 5, 5
@@ -397,6 +397,7 @@ def main():
             "with_ambiguous_churners": D_all.reset_index(drop=True),
             "era_matched_churners_T_from_2025_07": D[(D.label == 0) | (D["T"] >= pd.Timestamp("2025-07-01", tz="UTC"))].reset_index(drop=True),
             "telemetry_only_no_firmographics": D.drop(columns=firmo),
+            "controls_from_trusted_map_only": D[(D.label == 1) | (D.map_source == "feature_usage_extract")].reset_index(drop=True),
         }
         if OUT_UNVERIFIED.exists():
             U = pd.read_pickle(OUT_UNVERIFIED)

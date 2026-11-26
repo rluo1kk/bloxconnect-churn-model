@@ -106,7 +106,9 @@ def main():
         past = asof(g, T - pd.Timedelta(days=TREND_DAYS), tol_days=TREND_TOL)
         f = {"grid_id": gid, "account_id": acct if acct is not None else "grid:" + gid, "source": src, "T": T,
              "churn_date": cd, "label": y, "ambiguous_churn": bool(ambiguous),
-             "ref_group": "churned" if y else ref}
+             "ref_group": "churned" if y else ref,
+             "map_source": (g["map_source"].dropna().iloc[-1] if "map_source" in g and g["map_source"].notna().any()
+                            else ("churn_pull" if y else None))}
         # silence BEYOND a normal weekly cycle. Raw "days since last snapshot" (0-6 for any weekly
         # reporter) encodes the weekday the scoring date happens to fall on, and churn dates
         # cluster on month starts, so the raw value leaks the label (AUC 0.53 within the week).
