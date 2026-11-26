@@ -1,8 +1,8 @@
 # BloxConnect Churn Model: Handoff
 
-**From:** Richard Luo (Product Management Intern), last day 25 Nov 2026
-**Manager:** Manash Kirtania
-**Repository (private):** https://github.com/rluo1kk/bloxconnect-churn-model
+**From:** Richard Luo (Product Management Intern), 26 Nov 2026
+**Handed to:** Product Team (Alex Lamont, Matt Landry, Deepak Arora)
+**Repository (private):** link to be added once created
 
 ---
 
@@ -63,6 +63,21 @@ three reasons:
   and re-run the pipeline.
 
 ## 2. Read these first
+
+**v2 (current model):**
+
+| File | What it is |
+|---|---|
+| [Step-by-step walkthrough](https://claude.ai/artifact/R4z4E72hLrd16qZJto8XpS) (Claude Doc) | the whole v2 model in plain language, editable |
+| [The parameter filters in detail](https://claude.ai/artifact/58qzjceGTfHMbndb5p3U2h) (Claude Doc) | how 264 parameters became 3, with worked examples |
+| [docs/v2/MODEL_V2.md](docs/v2/MODEL_V2.md) | full technical write-up: data, method, leaks, results, limitations |
+| [docs/v2/INTERPRETING_THE_MODELS.md](docs/v2/INTERPRETING_THE_MODELS.md) | how to read the logistic model and gradient boosting |
+| [docs/v2/GRADIENT_BOOSTING_EXAMPLE.md](docs/v2/GRADIENT_BOOSTING_EXAMPLE.md) | gradient boosting worked through with 8 customers |
+| [reports/v2/RESULTS.md](reports/v2/RESULTS.md) | every v2 metric (generated) |
+
+v2 runs with: `python -m churn2.namematch && python -m churn2.extract && python -m churn2.dataset && python -m churn2.model && python -m churn2.report && python -m churn2.consensus`.
+
+**v1 (first study, kept for reference):**
 
 | File | What it is |
 |---|---|
@@ -126,8 +141,7 @@ Code map: `churn/load.py` → `cohorts.py` → `signals.py` (v0) → `features.p
 ## 6. What we were working on
 
 Proving whether BloxConnect telemetry can predict churn, and replacing the dashboard's churn
-tier with something that works. For comparison, the **Gainsight ML team's** model (sent by
-Deepak) reports AUC 0.67, 81% recall and 22% precision. It was measured on different data, so
+tier with something that works. For comparison, the **Gainsight ML team's** model reports AUC 0.67, 81% recall and 22% precision. It was measured on different data, so
 it's a reference point, not a head-to-head comparison.
 
 ## 7. Next steps, in priority order
