@@ -26,7 +26,7 @@ def _d(handoff_rel, laptop_default):
 
 
 _FINAL = _HOME / "Downloads/Final Versions"
-_CHURN = "3 - Churn Model"
+_CHURN = "Shared data/Churn model inputs"
 _LABELS = f"{_CHURN}/Labels and account mapping"
 
 # --- Raw inputs (never committed) -------------------------------------------------

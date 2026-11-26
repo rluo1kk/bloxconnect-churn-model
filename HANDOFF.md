@@ -75,7 +75,7 @@ three reasons:
 | [docs/v2/GRADIENT_BOOSTING_EXAMPLE.md](docs/v2/GRADIENT_BOOSTING_EXAMPLE.md) | gradient boosting worked through with 8 customers |
 | [reports/v2/RESULTS.md](reports/v2/RESULTS.md) | every v2 metric (generated) |
 
-**Data:** the inputs are in the OneDrive handoff folder (`3 - Churn Model` and `Shared data`). Point the code at it once, and every path follows:
+**Data:** the inputs are in the OneDrive handoff folder, under `Shared data` (`Churn model inputs` and the weekly HEKA exports). The folder `3 - Churn Model` holds the one-pager and the technical write-up. Point the code at it once, and every path follows:
 
 ```bash
 export CHURN_HANDOFF_DIR="/path/to/Product_Team_Handoff"
