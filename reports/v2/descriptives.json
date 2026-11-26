@@ -1,0 +1,24 @@
+{
+ "churned": {
+  "grids": 316,
+  "silent_over_2_weeks_pct": 35.4,
+  "silent_over_1_month_pct": 30.7,
+  "any_dtc_licence_pct": 14.2,
+  "any_rpz_licence_pct": 15.8,
+  "median_employees": 1068,
+  "median_daily_queries": 3080,
+  "median_disk_gb": 225.0,
+  "zero_query_pct": 42.7
+ },
+ "retained": {
+  "grids": 968,
+  "silent_over_2_weeks_pct": 9.4,
+  "silent_over_1_month_pct": 7.1,
+  "any_dtc_licence_pct": 38.4,
+  "any_rpz_licence_pct": 37.6,
+  "median_employees": 2529,
+  "median_daily_queries": 2471417,
+  "median_disk_gb": 103.0,
+  "zero_query_pct": 25.9
+ }
+}

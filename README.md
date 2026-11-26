@@ -1,5 +1,11 @@
 # BloxConnect Churn Model
 
+> **Start here: v2** ([docs/v2/MODEL_V2.md](docs/v2/MODEL_V2.md)), a model built from the data with a
+> locked test set and significance-gated parameters. 3 independent parameters (silence, DNS Traffic
+> Control adoption, company size), test AUC 0.79–0.82. Run: `python -m churn2.extract && python -m
+> churn2.dataset && python -m churn2.model && python -m churn2.report`.
+> The material below is the earlier v1 study (Taxonomy backtest), kept for reference.
+
 Backtests the BloxConnect Taxonomy churn score against real churned customers and compares it
 with statistical models trained on the same HEKA telemetry.
 
