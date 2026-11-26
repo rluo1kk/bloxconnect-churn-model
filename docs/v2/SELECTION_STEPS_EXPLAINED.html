@@ -1,0 +1,248 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Selection Steps Explained</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+:root{color-scheme:light}
+body{background:#fff;color:#1a1a1a;font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;max-width:860px;margin:40px auto;padding:0 20px}
+h1{font-size:28px;border-bottom:2px solid #eee;padding-bottom:8px}
+h2{font-size:20px;margin-top:32px;color:#00594C}
+table{border-collapse:collapse;margin:12px 0;width:100%}
+th,td{border:1px solid #ddd;padding:7px 10px;text-align:left}
+th{background:#f4f6f5}
+tr:nth-child(even) td{background:#fafafa}
+code{background:#f2f2f2;padding:1px 5px;border-radius:4px;font-size:14px}
+li{margin:4px 0}
+pre{background:#f6f8f7;border:1px solid #e3e6e4;padding:12px;border-radius:6px;font-size:14px;overflow-x:auto} pre code{background:none;padding:0} hr{border:0;border-top:1px solid #e3e6e4;margin:36px 0} em{color:#555}</style></head><body><h1>How 264 parameters became 5: the selection steps explained</h1>
+<p>The pipeline started with 264 parameters that had enough data to test. Each step below is a filter.
+A parameter has to pass all of them to reach the final model. Examples use the real numbers from
+this project.</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What it asks</th>
+<th style="text-align: right;">Parameters left</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. Significant and stable over time</td>
+<td>Do churned and retained customers really differ on this, and not just because of the date they were measured?</td>
+<td style="text-align: right;">64</td>
+</tr>
+<tr>
+<td>2. Independent</td>
+<td>Is this measuring something different from the parameters already kept?</td>
+<td style="text-align: right;">27</td>
+</tr>
+<tr>
+<td>3. Adds significant accuracy</td>
+<td>Does adding it make predictions <em>meaningfully</em> better?</td>
+<td style="text-align: right;">5</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Step 1: Significant and stable over time (264 → 64)</h2>
+<p>Four checks happen at once here.</p>
+<h3>a) Mann-Whitney U test: "do the two groups differ?"</h3>
+<ul>
+<li>It <strong>ranks every customer</strong> on a parameter, from lowest to highest, and checks whether churned
+  customers sit noticeably lower or higher in the ranking than retained ones.</li>
+<li>It works on <strong>ranks, not raw values</strong>, so a few giant customers (e.g. 50 million queries a day)
+  can't distort it. It also makes no assumption that the data follows a bell curve, which HEKA
+  counts rarely do.</li>
+<li>Its result can be written as an <strong>AUC</strong>: the chance that a randomly picked churner has a <em>higher</em>
+  value than a randomly picked retained customer.</li>
+<li><strong>0.50 means no difference.</strong></li>
+<li>DNS Traffic Control adoption scored <strong>0.31</strong>: churners have <em>more</em> DTC only 31% of the time, so
+    they clearly tend to have <em>less</em>.</li>
+<li>Silence scored <strong>0.63</strong>: churners tend to be silent longer.</li>
+</ul>
+<h3>b) Benjamini-Hochberg FDR, q &lt; 0.01: "is it a fluke?"</h3>
+<ul>
+<li>Test 264 parameters and some will look significant <strong>by pure chance</strong>. At the usual p &lt; 0.01,
+  about 2–3 of 264 would pass even if nothing were real.</li>
+<li>The <strong>false discovery rate (FDR)</strong> correction adjusts for testing so many at once. q &lt; 0.01 means
+  <em>at most about 1% of the parameters we keep are expected to be flukes</em>.</li>
+<li>Effect here: 114 parameters passed a plain p &lt; 0.01; <strong>98</strong> passed after the correction.</li>
+</ul>
+<h3>c) Effect size, |AUC − 0.5| ≥ 0.05: "is the difference big enough to matter?"</h3>
+<ul>
+<li>With thousands of customers, even tiny differences become "statistically significant". This
+  check requires a <strong>real-world difference</strong>: AUC at or below 0.45, or at or above 0.55.</li>
+<li>Example: DHCP templates had q = 0.008 (significant) but AUC 0.45, a barely-there difference.
+  <strong>Dropped.</strong></li>
+<li>Effect here: 98 → <strong>71</strong>.</li>
+</ul>
+<h3>d) Era drift, p &lt; 0.01 and |ρ| ≥ 0.15: "is it really about the date?"</h3>
+<ul>
+<li>Churners were measured between 2023 and 2026; retained customers only in 2026. If a parameter
+  <strong>changes with the calendar</strong> (for example, newer NIOS versions report more of something), it
+  would separate the groups by <strong>when</strong> they were measured, not by <strong>who</strong> churned.</li>
+<li>The test: among churners only, check whether the parameter rises or falls with the measurement
+  date (Spearman correlation <strong>ρ</strong>, explained below).</li>
+<li>Example: <em>enabled features per member</em> rose steadily with the date (ρ = +0.30). It looked
+  predictive, but partly because churners were measured earlier. <strong>Dropped.</strong> So were tenure,
+  HTTP certificates, share of virtual appliances, two geography flags and one zone count.</li>
+<li>Effect here: 71 → <strong>64</strong>.</li>
+</ul>
+<hr />
+<h2>Step 2: Independent, Spearman |ρ| ≥ 0.7 (64 → 27)</h2>
+<ul>
+<li><strong>Spearman correlation (ρ)</strong> measures how strongly two parameters move together, from −1 to +1:</li>
+<li><strong>0</strong> means unrelated;</li>
+<li><strong>±1</strong> means they always move together.</li>
+</ul>
+<p>Like Mann-Whitney, it uses ranks, so outliers can't distort it.
+- Many HEKA fields <strong>measure the same thing twice</strong>. Keeping both adds no information and makes the
+  model unstable, because it can't tell which of the twins deserves the credit.
+- The pipeline groups parameters with |ρ| ≥ 0.7 into clusters and <strong>keeps only the strongest one
+  in each</strong>.</p>
+<p><strong>Real examples:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Kept</th>
+<th>Dropped as near-duplicates</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>% of members on DTC (grid view)</td>
+<td>% of members on DTC (member view), ρ = 0.98 with the kept one; share licensed for RPZ</td>
+</tr>
+<tr>
+<td>Daily Reporting volume</td>
+<td>Reporting licence capacity, and five per-category Reporting volumes (DNS, DHCP, IPAM, …)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Step 3: Adds significant accuracy (27 → 5)</h2>
+<h3>Forward selection: build the model one parameter at a time</h3>
+<ol>
+<li>Start with <strong>no parameters</strong>.</li>
+<li>Try each remaining parameter, and add the one that improves accuracy the most.</li>
+<li><strong>Only keep it if the improvement passes a significance test</strong> (below).</li>
+<li>Repeat until the next-best parameter fails the test.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Step</th>
+<th>Parameter added</th>
+<th style="text-align: right;">Accuracy (AUC)</th>
+<th style="text-align: right;">Gain</th>
+<th style="text-align: right;">p-value</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td>% of members on DTC</td>
+<td style="text-align: right;">0.694</td>
+<td style="text-align: right;">+0.194</td>
+<td style="text-align: right;">&lt; 0.000001</td>
+<td><strong>added</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">2</td>
+<td>Daily Reporting volume</td>
+<td style="text-align: right;">0.785</td>
+<td style="text-align: right;">+0.091</td>
+<td style="text-align: right;">&lt; 0.000001</td>
+<td><strong>added</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">3</td>
+<td>Employee count</td>
+<td style="text-align: right;">0.831</td>
+<td style="text-align: right;">+0.046</td>
+<td style="text-align: right;">0.000007</td>
+<td><strong>added</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td>Virtual-node management IPs</td>
+<td style="text-align: right;">0.842</td>
+<td style="text-align: right;">+0.011</td>
+<td style="text-align: right;">0.001</td>
+<td><strong>added</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">5</td>
+<td>Days silent beyond a week</td>
+<td style="text-align: right;">0.865</td>
+<td style="text-align: right;">+0.023</td>
+<td style="text-align: right;">0.002</td>
+<td><strong>added</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">6</td>
+<td>Daily DNS queries</td>
+<td style="text-align: right;">0.869</td>
+<td style="text-align: right;">+0.004</td>
+<td style="text-align: right;">0.09</td>
+<td><strong>rejected, stop</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Daily DNS queries is strongly related to churn on its own. But once DTC, Reporting, employees and
+silence are known, it adds almost nothing new, so it's left out.</p>
+<h3>Logistic regression</h3>
+<p>The model used to score each candidate set. It's the same kind of model as the final one: each
+parameter gets one weight, the weights are summed, and the sum is turned into a probability.</p>
+<h3>5×5 repeated cross-validation: "how accurate is it on customers it hasn't seen?"</h3>
+<ol>
+<li>Split the development customers into <strong>5 groups</strong>.</li>
+<li>Train on 4 groups, then test on the 5th. Rotate so each group is tested once. That gives
+   <strong>5 accuracy scores</strong>.</li>
+<li>Reshuffle the customers into new groups and do it again, <strong>5 times in all</strong>.</li>
+<li>Result: <strong>25 accuracy scores</strong> per candidate, instead of one lucky or unlucky split.</li>
+</ol>
+<h3>Nadeau-Bengio corrected t-test: "is the gain real?"</h3>
+<ul>
+<li>Each candidate's 25 scores are compared with the current model's 25 scores: is the new
+  parameter's gain bigger than random variation?</li>
+<li>A normal t-test would be <strong>too generous</strong>, because the 25 scores aren't independent: the
+  training groups overlap heavily, so the scores move together.</li>
+<li>The <strong>Nadeau-Bengio correction</strong> accounts for that overlap and widens the uncertainty, so a gain
+  has to be genuinely large to count.</li>
+<li><strong>p &lt; 0.01</strong> means there's less than a 1% chance of seeing a gain this big if the parameter
+  really added nothing.</li>
+</ul>
+<hr />
+<h2>What happened after these steps</h2>
+<p>The 5 parameters above came from <strong>one</strong> split of the data. The whole pipeline was then repeated on
+<strong>25 different random splits</strong>, to see which parameters keep being chosen:</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th style="text-align: right;">Chosen in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DNS Traffic Control adoption</td>
+<td style="text-align: right;">96% of runs</td>
+</tr>
+<tr>
+<td>Silence</td>
+<td style="text-align: right;">80%</td>
+</tr>
+<tr>
+<td>Employee count</td>
+<td style="text-align: right;">76%</td>
+</tr>
+<tr>
+<td>Reporting volume</td>
+<td style="text-align: right;">36%</td>
+</tr>
+<tr>
+<td>Virtual-node management IPs</td>
+<td style="text-align: right;">rarely</td>
+</tr>
+</tbody>
+</table>
+<p>The three chosen in most runs form the <strong>recommended model</strong>. The other two were real on this one
+split, but not reliable across splits.</p></body></html>
