@@ -64,9 +64,15 @@ of the time.** The few disagreements are companies with two Salesforce records.
 **About 9 retained grids per churned grid.** Beyond 4–5 per churner, extra retained customers add
 little precision; their value here is a broader, more representative baseline.
 
-**Not scorable:** 194 churned grids had no telemetry covering the 2 months before their scoring
-date. Anand's pull covers each customer's *last reporting year*, which for many ended long before
-churn.
+**Not scorable: 194 churned grids.** A grid is scored only if its telemetry covers the full window
+before its scoring date (90 days before churn) and it isn't over a year stale. Anand's pull covers
+each customer's *last reporting year*, ending at its final snapshot, which leaves three gaps:
+
+| Reason | Grids | What happened | Recoverable? |
+|---|---:|---|---|
+| **A. Kept reporting after churn** | 89 | 87% were still reporting after the churn date (median 287 days after), so their "last reporting year" sits mostly *after* churn and the months before it aren't in the pull | **Yes**, with a pull of the 12 months before churn |
+| **B. Data starts just too late** | 25 | data begins about 4 months (median 131 days) before churn; the scoring window needs about 5 | **Yes**, same request |
+| **C. Went dark long before churn** | 80 | last report a median of 684 days before churn, after reporting for only about a month | **No**: no telemetry exists. Excluded on purpose, because retained grids silent for over a year (mostly abandoned lab grids) are excluded too |
 
 ## 2. Design
 
@@ -244,7 +250,7 @@ churners at the cost of more false alarms.
    Reporting use as context.
 2. **When requests are possible again,** ask Anand for:
    - **the 12 months before each churn date** (instead of the last reporting year), which recovers
-     about 194 churned grids;
+     about 114 churned grids (gaps A and B in §1), taking the model from 316 to about 430;
    - **a random sample of renewed accounts on the same dates.**
 3. **Add commercial data dated *before* churn:** renewal date, ARR trend, support cases.
 4. **Re-fit quarterly** with the same pipeline. The 25-split stability check shows whether the

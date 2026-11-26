@@ -112,9 +112,39 @@ of the time.</strong> The few disagreements are companies with two Salesforce re
 </table>
 <p><strong>About 9 retained grids per churned grid.</strong> Beyond 4–5 per churner, extra retained customers add
 little precision; their value here is a broader, more representative baseline.</p>
-<p><strong>Not scorable:</strong> 194 churned grids had no telemetry covering the 2 months before their scoring
-date. Anand's pull covers each customer's <em>last reporting year</em>, which for many ended long before
-churn.</p>
+<p><strong>Not scorable: 194 churned grids.</strong> A grid is scored only if its telemetry covers the full window
+before its scoring date (90 days before churn) and it isn't over a year stale. Anand's pull covers
+each customer's <em>last reporting year</em>, ending at its final snapshot, which leaves three gaps:</p>
+<table>
+<thead>
+<tr>
+<th>Reason</th>
+<th style="text-align: right;">Grids</th>
+<th>What happened</th>
+<th>Recoverable?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A. Kept reporting after churn</strong></td>
+<td style="text-align: right;">89</td>
+<td>87% were still reporting after the churn date (median 287 days after), so their "last reporting year" sits mostly <em>after</em> churn and the months before it aren't in the pull</td>
+<td><strong>Yes</strong>, with a pull of the 12 months before churn</td>
+</tr>
+<tr>
+<td><strong>B. Data starts just too late</strong></td>
+<td style="text-align: right;">25</td>
+<td>data begins about 4 months (median 131 days) before churn; the scoring window needs about 5</td>
+<td><strong>Yes</strong>, same request</td>
+</tr>
+<tr>
+<td><strong>C. Went dark long before churn</strong></td>
+<td style="text-align: right;">80</td>
+<td>last report a median of 684 days before churn, after reporting for only about a month</td>
+<td><strong>No</strong>: no telemetry exists. Excluded on purpose, because retained grids silent for over a year (mostly abandoned lab grids) are excluded too</td>
+</tr>
+</tbody>
+</table>
 <h2>2. Design</h2>
 <ul>
 <li><strong>Scoring date:</strong></li>
@@ -541,7 +571,7 @@ churners at the cost of more false alarms.</p>
    Reporting use as context.</li>
 <li><strong>When requests are possible again,</strong> ask Anand for:</li>
 <li><strong>the 12 months before each churn date</strong> (instead of the last reporting year), which recovers
-     about 194 churned grids;</li>
+     about 114 churned grids (gaps A and B in §1), taking the model from 316 to about 430;</li>
 <li><strong>a random sample of renewed accounts on the same dates.</strong></li>
 <li><strong>Add commercial data dated <em>before</em> churn:</strong> renewal date, ARR trend, support cases.</li>
 <li><strong>Re-fit quarterly</strong> with the same pipeline. The 25-split stability check shows whether the
