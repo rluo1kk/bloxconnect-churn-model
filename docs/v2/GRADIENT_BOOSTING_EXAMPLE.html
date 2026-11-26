@@ -1,0 +1,313 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Gradient Boosting Example</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+:root{color-scheme:light}
+body{background:#fff;color:#1a1a1a;font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;max-width:860px;margin:40px auto;padding:0 20px}
+h1{font-size:28px;border-bottom:2px solid #eee;padding-bottom:8px}
+h2{font-size:20px;margin-top:32px;color:#00594C}
+table{border-collapse:collapse;margin:12px 0;width:100%}
+th,td{border:1px solid #ddd;padding:7px 10px;text-align:left}
+th{background:#f4f6f5}
+tr:nth-child(even) td{background:#fafafa}
+code{background:#f2f2f2;padding:1px 5px;border-radius:4px;font-size:14px}
+li{margin:4px 0}
+pre{background:#f6f8f7;border:1px solid #e3e6e4;padding:12px;border-radius:6px;font-size:14px;overflow-x:auto} pre code{background:none;padding:0} hr{border:0;border-top:1px solid #e3e6e4;margin:36px 0} em{color:#555}.tree{background:#f6f8f7;border-left:4px solid #00594C;padding:12px 16px;border-radius:4px;margin:12px 0;line-height:1.8}</style></head><body><h1>Gradient boosting, a worked example with 8 customers</h1>
+<p><strong>The idea in one line:</strong> start with a rough guess, measure how wrong it is for each customer, add a
+small decision tree that corrects those mistakes, and repeat.</p>
+<p><em>All numbers below are calculated, not illustrative. The example is simplified: the real model
+works on the log-odds scale, uses larger trees and runs 300–400 rounds with smaller steps.</em></p>
+<hr />
+<h2>The customers</h2>
+<table>
+<thead>
+<tr>
+<th>Customer</th>
+<th style="text-align: right;">Days silent (beyond a normal week)</th>
+<th style="text-align: right;">% of members on DTC</th>
+<th style="text-align: center;">Actually churned?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td style="text-align: right;">30</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: center;"><strong>yes</strong></td>
+</tr>
+<tr>
+<td>B</td>
+<td style="text-align: right;">25</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: center;"><strong>yes</strong></td>
+</tr>
+<tr>
+<td>C</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: center;"><strong>yes</strong></td>
+</tr>
+<tr>
+<td>D</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: center;">no</td>
+</tr>
+<tr>
+<td>E</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">60</td>
+<td style="text-align: center;">no</td>
+</tr>
+<tr>
+<td>F</td>
+<td style="text-align: right;">21</td>
+<td style="text-align: right;">70</td>
+<td style="text-align: center;">no</td>
+</tr>
+<tr>
+<td>G</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">50</td>
+<td style="text-align: center;">no</td>
+</tr>
+<tr>
+<td>H</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: center;">no</td>
+</tr>
+</tbody>
+</table>
+<p>3 of the 8 customers churned.</p>
+<hr />
+<h2>Step 0: start with the simplest guess</h2>
+<p>Give everyone the average churn rate, <strong>3 ÷ 8 = 0.375</strong>, so a 37.5% predicted risk for every
+customer.</p>
+<h2>Step 1: measure the mistakes (the "residuals")</h2>
+<p><strong>Mistake = what actually happened − what we predicted.</strong> Churned counts as 1, retained as 0.</p>
+<table>
+<thead>
+<tr>
+<th>Customer</th>
+<th style="text-align: right;">Actual</th>
+<th style="text-align: right;">Predicted</th>
+<th style="text-align: right;">Mistake</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A, B, C (churned)</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.375</td>
+<td style="text-align: right;"><strong>+0.625</strong>, too low</td>
+</tr>
+<tr>
+<td>D, E, F, G, H (stayed)</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.375</td>
+<td style="text-align: right;"><strong>−0.375</strong>, too high</td>
+</tr>
+</tbody>
+</table>
+<h2>Step 2: tree 1, find the question that best sorts the mistakes</h2>
+<p>The model tries possible yes/no questions and keeps the one that best separates the "too low"
+mistakes from the "too high" ones:</p>
+<div class="tree"><b>Tree 1: "Is any member on DTC?"</b><br>
+YES (E, F, G): average mistake <b>−0.375</b>, so these predictions are too high<br>
+NO (A, B, C, D, H): average mistake <b>+0.225</b>, so these predictions are too low</div>
+
+<h2>Step 3: take a small step in that direction</h2>
+<p><strong>New prediction = old prediction + learning rate × the tree's correction.</strong> The learning rate here
+is 0.5, which means the model only moves halfway, so no single tree can overreact.</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Calculation</th>
+<th style="text-align: right;">New prediction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DTC users (E, F, G)</td>
+<td>0.375 + 0.5 × (−0.375)</td>
+<td style="text-align: right;"><strong>0.188</strong></td>
+</tr>
+<tr>
+<td>Non-DTC (A, B, C, D, H)</td>
+<td>0.375 + 0.5 × (+0.225)</td>
+<td style="text-align: right;"><strong>0.488</strong></td>
+</tr>
+</tbody>
+</table>
+<h2>Step 4: repeat, and tree 2 picks up what tree 1 missed</h2>
+<p>New mistakes: A, B and C are still too low (+0.512), while D and H are now too high (−0.488). Tree 1
+can't separate these, because none of them use DTC. So tree 2 asks a different question:</p>
+<div class="tree"><b>Tree 2: "Silent for more than 14 days?"</b><br>
+YES (A, B, F): average mistake <b>+0.279</b>, push up<br>
+NO (C, D, E, G, H): average mistake <b>−0.168</b>, push down</div>
+
+<table>
+<thead>
+<tr>
+<th>Customer</th>
+<th style="text-align: right;">After tree 1</th>
+<th style="text-align: right;">Tree 2's step</th>
+<th style="text-align: right;">After tree 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A, B (silent, no DTC)</td>
+<td style="text-align: right;">0.488</td>
+<td style="text-align: right;">+0.140</td>
+<td style="text-align: right;"><strong>0.627</strong></td>
+</tr>
+<tr>
+<td>C, D, H (reporting, no DTC)</td>
+<td style="text-align: right;">0.488</td>
+<td style="text-align: right;">−0.084</td>
+<td style="text-align: right;"><strong>0.404</strong></td>
+</tr>
+<tr>
+<td>F (silent, but uses DTC)</td>
+<td style="text-align: right;">0.188</td>
+<td style="text-align: right;">+0.140</td>
+<td style="text-align: right;"><strong>0.327</strong></td>
+</tr>
+<tr>
+<td>E, G (reporting, use DTC)</td>
+<td style="text-align: right;">0.188</td>
+<td style="text-align: right;">−0.084</td>
+<td style="text-align: right;"><strong>0.104</strong></td>
+</tr>
+</tbody>
+</table>
+<h2>After 3 rounds</h2>
+<p>Tree 3 asks about DTC again, refining what's left over.</p>
+<table>
+<thead>
+<tr>
+<th>Customer</th>
+<th style="text-align: center;">Churned?</th>
+<th style="text-align: right;">Start</th>
+<th style="text-align: right;">Round 1</th>
+<th style="text-align: right;">Round 2</th>
+<th style="text-align: right;"><strong>Round 3</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: right;">0.375</td>
+<td style="text-align: right;">0.488</td>
+<td style="text-align: right;">0.627</td>
+<td style="text-align: right;"><strong>0.681</strong></td>
+</tr>
+<tr>
+<td>B</td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: right;">0.375</td>
+<td style="text-align: right;">0.488</td>
+<td style="text-align: right;">0.627</td>
+<td style="text-align: right;"><strong>0.681</strong></td>
+</tr>
+<tr>
+<td>C</td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: right;">0.375</td>
+<td style="text-align: right;">0.488</td>
+<td style="text-align: right;">0.404</td>
+<td style="text-align: right;"><strong>0.457</strong></td>
+</tr>
+<tr>
+<td>D</td>
+<td style="text-align: center;">no</td>
+<td style="text-align: right;">0.375</td>
+<td style="text-align: right;">0.488</td>
+<td style="text-align: right;">0.404</td>
+<td style="text-align: right;"><strong>0.457</strong></td>
+</tr>
+<tr>
+<td>H</td>
+<td style="text-align: center;">no</td>
+<td style="text-align: right;">0.375</td>
+<td style="text-align: right;">0.488</td>
+<td style="text-align: right;">0.404</td>
+<td style="text-align: right;"><strong>0.457</strong></td>
+</tr>
+<tr>
+<td>F</td>
+<td style="text-align: center;">no</td>
+<td style="text-align: right;">0.375</td>
+<td style="text-align: right;">0.188</td>
+<td style="text-align: right;">0.327</td>
+<td style="text-align: right;"><strong>0.238</strong></td>
+</tr>
+<tr>
+<td>E</td>
+<td style="text-align: center;">no</td>
+<td style="text-align: right;">0.375</td>
+<td style="text-align: right;">0.188</td>
+<td style="text-align: right;">0.104</td>
+<td style="text-align: right;"><strong>0.015</strong></td>
+</tr>
+<tr>
+<td>G</td>
+<td style="text-align: center;">no</td>
+<td style="text-align: right;">0.375</td>
+<td style="text-align: right;">0.188</td>
+<td style="text-align: right;">0.104</td>
+<td style="text-align: right;"><strong>0.015</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>What happened:</strong>
+- <strong>Silent customers without DTC</strong> (A, B) rose to the highest risk.
+- <strong>DTC users who keep reporting</strong> (E, G) fell to almost zero.
+- <strong>F</strong> (silent, but uses DTC) landed in between. The trees <em>combined</em> the two signals, which is
+  the "interaction" a points-based score can't capture.
+- <strong>C, D and H look identical</strong> in this data (reporting, no DTC), so the model can't tell them
+  apart. It gives all three the same middle risk. No model can beat the information it's given.</p>
+<hr />
+<h2>Why it's called "gradient" boosting</h2>
+<p>Each tree is fitted to the <strong>mistakes</strong> (actual − predicted). Those mistakes are exactly the
+<strong>downhill direction of the error</strong>, so every round is one step of <strong>gradient descent</strong>: walking
+downhill on the error, one small tree at a time.</p>
+<h2>Mapping the example to the real model</h2>
+<table>
+<thead>
+<tr>
+<th>In this example</th>
+<th>In the real churn model</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8 customers</td>
+<td>about 2,600 grids in the development set</td>
+</tr>
+<tr>
+<td>2 parameters</td>
+<td>up to 64 screened parameters</td>
+</tr>
+<tr>
+<td>1 question per tree</td>
+<td>up to 15 leaves per tree</td>
+</tr>
+<tr>
+<td>3 rounds</td>
+<td>300 rounds</td>
+</tr>
+<tr>
+<td>learning rate 0.5</td>
+<td>learning rate 0.05 (smaller, more careful steps)</td>
+</tr>
+<tr>
+<td>predicts probability directly</td>
+<td>predicts log-odds, then converts to probability</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why we didn't pick it in the end:</strong> with this much data, all those trees weren't significantly
+more accurate than the simple 3-parameter logistic model (average AUC 0.859 vs 0.842). The logistic
+model can be explained in one sentence per customer.</p></body></html>
