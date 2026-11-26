@@ -8,18 +8,59 @@
 
 ## 1. What it is
 
-A test of how well the **BloxConnect Taxonomy churn score** predicts real churn, plus better
-statistical models trained on the same HEKA telemetry. Everything is reproducible with two
-commands.
+A churn model for NIOS customers built from BloxConnect (HEKA) telemetry, plus a test of the
+current **BloxConnect Taxonomy churn score**.
 
-**Headline:**
+**Use v2** ([docs/v2/MODEL_V2.md](docs/v2/MODEL_V2.md)). It was built from the data, with a locked
+test set and significance-gated parameters, comparing **316 churned grids** with **2,973
+verified-active grids**. It uses **3 independent parameters**:
+- silence;
+- DNS Traffic Control adoption;
+- company size.
 
-| | Current Taxonomy score | Gradient boosting (best) |
+| | Taxonomy churn score | **v2 model** |
 |---|---:|---:|
-| Churners caught, 3 months ahead | **1 of 378** | **163 of 378** |
-| Flags that were real churners | 4% | 42% |
-| Churners found in the top 10% riskiest grids | 7% | 43% |
-| ROC-AUC (0.5 = guessing) | 0.52 | 0.84 |
+| ROC-AUC (0.5 = guessing) | 0.52 | **0.82–0.88** |
+| Churners caught, 3 months ahead | 1 of 378 | 50% at a 46% precision (locked test set) |
+
+The rest of this file describes **v1**, the first study (Taxonomy backtest and a 171-parameter
+gradient boosting model). Its 0.84 AUC was later found to be inflated by a weekday artifact. It's
+kept for reference.
+
+## Why "3 months ahead"
+
+Every churned customer is scored using only telemetry up to **90 days before its churn date** (the
+"Customer Until" date on the Salesforce churn list). Nothing from the final 90 days is used. Retained
+customers are still Active more than 90 days after their scoring date. The 90-day lead was chosen for
+three reasons:
+
+1. **It leaves time to act.** A flag arrives about a quarter before the contract ends: enough for a
+   CSM conversation, an enablement push or a retention offer. A 1-month warning is usually too late
+   to change a renewal decision.
+2. **It matches the Gainsight ML model,** which also scores accounts 3 months before renewal. Using
+   the same horizon keeps the two models comparable, and possible to combine later.
+3. **It keeps most of the churned sample.** Anand's pull covers each customer's last reporting year,
+   so longer leads leave more churners with no data before their scoring date:
+
+   | Lead time | Churned grids that can be scored |
+   |---|---:|
+   | 1 month | 330 |
+   | 2 months | 329 |
+   | **3 months** | **316** |
+   | 6 months | 280 |
+   | 9 months | 242 |
+   | 12 months | 98 |
+
+   Three months costs only 14 churners compared with one month. Six months or more starts losing
+   them quickly.
+
+**Limits of the choice:**
+- The model was trained and tested **only at the 90-day mark.** Its accuracy at other lead times
+  hasn't been measured.
+- It doesn't predict the exact churn date. Predicting *when* would need survival analysis (see
+  next steps).
+- The lead time is one setting, `LEAD_DAYS` in `churn/config.py`. To try 60 or 180 days, change it
+  and re-run the pipeline.
 
 ## 2. Read these first
 
