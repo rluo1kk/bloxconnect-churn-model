@@ -3,6 +3,7 @@
 > **Start here: v2** ([docs/v2/MODEL_V2.md](docs/v2/MODEL_V2.md)), a model built from the data with a
 > locked test set and significance-gated parameters. 316 churned vs 2,973 verified-active grids;
 > 3 independent parameters (silence, DNS Traffic Control adoption, company size), test AUC 0.82–0.88.
+> Data: set `CHURN_HANDOFF_DIR` to the OneDrive handoff folder (see HANDOFF.md).
 > Run: `python -m churn2.namematch && python -m churn2.extract && python -m churn2.dataset &&
 > python -m churn2.model && python -m churn2.report && python -m churn2.consensus`.
 > The material below is the earlier v1 study (Taxonomy backtest), kept for reference.

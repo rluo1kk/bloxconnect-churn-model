@@ -40,9 +40,9 @@ def labels():
     ch = ch[ch["18-Digit Account ID"].notna()]
     churn_date = dict(zip(ch["18-Digit Account ID"].str.strip(),
                           pd.to_datetime(ch["Customer Until"], errors="coerce", utc=True)))
-    lc = pd.read_excel(F / "Copy of Customer Lifecycle _Data_Current.xlsx", sheet_name="Complete Dataset")
+    lc = pd.read_excel(config.LIFECYCLE_XLSX, sheet_name="Complete Dataset")
     lc = lc.drop_duplicates("account_id").set_index("account_id")
-    sc = pd.read_excel(F / "Copy of Customer Lifecycle _Data_Current.xlsx", sheet_name="Scores",
+    sc = pd.read_excel(config.LIFECYCLE_XLSX, sheet_name="Scores",
                        usecols=["account_id", "account_geo"]).drop_duplicates("account_id").set_index("account_id")
     return churn_date, lc, sc
 

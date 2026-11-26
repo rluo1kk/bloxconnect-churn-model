@@ -91,7 +91,7 @@ def _row(source, account_id, grid_id, license_uid, collected_at, d, origin_versi
 def load_churn_pull(paths):
     rows = []
     for p in paths:
-        with open(p, encoding="utf-8") as f:
+        with config.open_text(p) as f:
             for line in f:
                 r = json.loads(line)
                 d = r.get("data") or {}

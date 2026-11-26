@@ -24,8 +24,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 from . import cohorts, config, features, models, signals
 from .run import groups_of, log
 
-DICT_XLSX = config._p("FIELD_DICTIONARY_XLSX",
-                      config._HOME / "Downloads/Blox_Connect/Dictionary/BloxConnect_Field_Dictionary-2.xlsx")
+DICT_XLSX = config.FIELD_DICTIONARY_XLSX
 
 HAND_DEFS = {
     "days_since_last": "Days between the scoring date and the grid's most recent HEKA snapshot (telemetry silence).",

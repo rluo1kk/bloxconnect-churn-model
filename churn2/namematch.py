@@ -23,8 +23,8 @@ import pandas as pd
 from churn import config
 
 OUT = config.DATA_DIR / "v2_name_map.pkl"
-MEMBER_DETAILS = Path.home() / "Downloads/Blox_Connect/HEKA customer data/Member Details.xlsx"
-ACTIVE_XLSX = Path.home() / "Downloads/SFDC NIOS Active Accounts.xlsx"
+MEMBER_DETAILS = config.MEMBER_DETAILS_XLSX
+ACTIVE_XLSX = config.ACTIVE_ACCOUNTS_XLSX
 
 SUFFIX = re.compile(r"\b(incorporated|inc|llc|l l c|ltd|limited|corp|corporation|co|company|plc|gmbh|ag|sa|s a|"
                     r"bv|b v|nv|n v|spa|s p a|srl|sas|pty|pte|oy|ab|as|a s|kk|k k|lp|llp|the)\b")

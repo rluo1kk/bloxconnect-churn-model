@@ -174,7 +174,7 @@ def member_aggregates(members: list, T_iso: str | None = None) -> dict:
 def load_churn_pull():
     grid_rows, mem_rows = [], []
     for p in sorted(config.CHURN_PULL_DIR.glob(config.CHURN_PULL_GLOB)):
-        with open(p, encoding="utf-8") as f:
+        with config.open_text(p) as f:
             for line in f:
                 r = json.loads(line)
                 d = r.get("data") or {}
@@ -244,7 +244,7 @@ def load_weekly(keep_grids: set | None, exclude: set = frozenset()):
 
 def grid_account_map():
     """grid UUID -> Salesforce account id, from the HEKA feature-usage extract (Dec 2025 - Jun 2026)."""
-    p = config.CHURN_PULL_DIR / "Copy of HEKA feature usage data and member role 06.05.2026.xlsx"
+    p = config.FEATURE_USAGE_XLSX
     gf = pd.read_excel(p, sheet_name="Grid Features", usecols=["account id Grid Member", "Grid UUID"])
     gf.columns = ["account_id", "grid_id"]
     gf["grid_id"] = gf["grid_id"].astype(str).str.replace("-", "").str.lower()
