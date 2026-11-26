@@ -111,10 +111,36 @@ downhill on the error, one small tree at a time.
 |---|---|
 | 8 customers | about 2,600 grids in the development set |
 | 2 parameters | up to 64 screened parameters |
-| 1 question per tree | up to 15 leaves per tree |
+| 1 question per tree = 2 leaves | up to 14 questions per tree = up to 15 leaves (at least 20 grids in each) |
 | 3 rounds | 300 rounds |
 | learning rate 0.5 | learning rate 0.05 (smaller, more careful steps) |
 | predicts probability directly | predicts log-odds, then converts to probability |
+
+### What "15 leaves" means
+
+A **leaf** is an end bucket of a tree: where a customer lands after answering its questions. Each
+leaf holds one correction ("push risk up or down by this much").
+
+- In the example above, each tree asked **one question**, so it had **2 leaves** (yes / no).
+- In the real model, a tree can ask **follow-up questions**, up to 14 of them, so customers can be
+  split into **as many as 15 buckets**, each with its own correction.
+
+<div class="tree"><b>A 4-leaf tree</b><br>
+Silent more than 14 days?<br>
+&nbsp;&nbsp;├─ yes → Any members on DTC?<br>
+&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ yes → <b>leaf 1</b>: push risk up a little<br>
+&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ no&nbsp;&nbsp;→ <b>leaf 2</b>: push risk up a lot<br>
+&nbsp;&nbsp;└─ no&nbsp;&nbsp;→ Fewer than 500 employees?<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ yes → <b>leaf 3</b>: push risk up slightly<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ no&nbsp;&nbsp;→ <b>leaf 4</b>: push risk down</div>
+
+**Why more leaves help:** one tree can capture **combinations**, such as "silent *and* no DTC",
+instead of one factor at a time.
+
+**Why cap it at 15:**
+- With unlimited leaves, a tree could make a bucket for almost every customer and **memorise**
+  them instead of learning patterns. That's overfitting.
+- A second rule backs this up: every leaf must contain **at least 20 grids**.
 
 **Why we didn't pick it in the end:** with this much data, all those trees weren't significantly
 more accurate than the simple 3-parameter logistic model (average AUC 0.859 vs 0.842). The logistic

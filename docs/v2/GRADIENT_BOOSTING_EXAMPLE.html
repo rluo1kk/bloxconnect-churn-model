@@ -9,7 +9,7 @@ th{background:#f4f6f5}
 tr:nth-child(even) td{background:#fafafa}
 code{background:#f2f2f2;padding:1px 5px;border-radius:4px;font-size:14px}
 li{margin:4px 0}
-pre{background:#f6f8f7;border:1px solid #e3e6e4;padding:12px;border-radius:6px;font-size:14px;overflow-x:auto} pre code{background:none;padding:0} hr{border:0;border-top:1px solid #e3e6e4;margin:36px 0} em{color:#555}.tree{background:#f6f8f7;border-left:4px solid #00594C;padding:12px 16px;border-radius:4px;margin:12px 0;line-height:1.8}</style></head><body><h1>Gradient boosting, a worked example with 8 customers</h1>
+pre{background:#f6f8f7;border:1px solid #e3e6e4;padding:12px;border-radius:6px;font-size:14px;overflow-x:auto} pre code{background:none;padding:0} hr{border:0;border-top:1px solid #e3e6e4;margin:36px 0} em{color:#555}.tree{background:#f6f8f7;border-left:4px solid #00594C;padding:12px 16px;border-radius:4px;margin:12px 0;line-height:1.8;font-family:ui-monospace,Menlo,monospace;font-size:14px}</style></head><body><h1>Gradient boosting, a worked example with 8 customers</h1>
 <p><strong>The idea in one line:</strong> start with a rough guess, measure how wrong it is for each customer, add a
 small decision tree that corrects those mistakes, and repeat.</p>
 <p><em>All numbers below are calculated, not illustrative. The example is simplified: the real model
@@ -291,8 +291,8 @@ downhill on the error, one small tree at a time.</p>
 <td>up to 64 screened parameters</td>
 </tr>
 <tr>
-<td>1 question per tree</td>
-<td>up to 15 leaves per tree</td>
+<td>1 question per tree = 2 leaves</td>
+<td>up to 14 questions per tree = up to 15 leaves (at least 20 grids in each)</td>
 </tr>
 <tr>
 <td>3 rounds</td>
@@ -308,6 +308,29 @@ downhill on the error, one small tree at a time.</p>
 </tr>
 </tbody>
 </table>
+<h3>What "15 leaves" means</h3>
+<p>A <strong>leaf</strong> is an end bucket of a tree: where a customer lands after answering its questions. Each
+leaf holds one correction ("push risk up or down by this much").</p>
+<ul>
+<li>In the example above, each tree asked <strong>one question</strong>, so it had <strong>2 leaves</strong> (yes / no).</li>
+<li>In the real model, a tree can ask <strong>follow-up questions</strong>, up to 14 of them, so customers can be
+  split into <strong>as many as 15 buckets</strong>, each with its own correction.</li>
+</ul>
+<div class="tree"><b>A 4-leaf tree</b><br>
+Silent more than 14 days?<br>
+&nbsp;&nbsp;├─ yes → Any members on DTC?<br>
+&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ yes → <b>leaf 1</b>: push risk up a little<br>
+&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ no&nbsp;&nbsp;→ <b>leaf 2</b>: push risk up a lot<br>
+&nbsp;&nbsp;└─ no&nbsp;&nbsp;→ Fewer than 500 employees?<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ yes → <b>leaf 3</b>: push risk up slightly<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ no&nbsp;&nbsp;→ <b>leaf 4</b>: push risk down</div>
+
+<p><strong>Why more leaves help:</strong> one tree can capture <strong>combinations</strong>, such as "silent <em>and</em> no DTC",
+instead of one factor at a time.</p>
+<p><strong>Why cap it at 15:</strong>
+- With unlimited leaves, a tree could make a bucket for almost every customer and <strong>memorise</strong>
+  them instead of learning patterns. That's overfitting.
+- A second rule backs this up: every leaf must contain <strong>at least 20 grids</strong>.</p>
 <p><strong>Why we didn't pick it in the end:</strong> with this much data, all those trees weren't significantly
 more accurate than the simple 3-parameter logistic model (average AUC 0.859 vs 0.842). The logistic
 model can be explained in one sentence per customer.</p></body></html>
